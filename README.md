@@ -12,7 +12,7 @@ replicación lógica, transparencia de distribución y transacciones distribuida
 ![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-panel-FF4B4B?logo=streamlit&logoColor=white)
 ![Tailscale](https://img.shields.io/badge/Tailscale-red%20privada-242424?logo=tailscale&logoColor=white)
-![Pruebas](https://img.shields.io/badge/pruebas-13%2F13-success)
+![Pruebas](https://img.shields.io/badge/pruebas-14%2F14-success)
 
 </div>
 
@@ -140,14 +140,33 @@ python gestion.py estado        # salud, volumen y replicación de cada nodo
 streamlit run dashboard/app.py   # http://localhost:8501
 ```
 
-| Pestaña | Qué demuestra |
+| Página | Qué demuestra |
 |---|---|
-| Nodos | Estado, volumen de datos y replicación de cada nodo |
-| Consultas nacionales | Consultas C1–C8 sobre los 6 nodos, con plan `EXPLAIN` (fragmentos consultados y SQL remoto) |
-| Venta local | Transacción 100 % local; funciona con el nodo aislado |
-| Traspaso 2PC | Fases de preparación y confirmación paso a paso, con el stock antes y después |
-| Catálogo | Cambio de precio en La Paz y su propagación a cada nodo |
-| Fallas | Aislar o reconectar nodos y resolver transacciones en duda |
+| Panorama nacional | Estado de los 6 nodos, ventas por departamento y diseño de distribución |
+| Consultas distribuidas | Consultas C1–C8 desde La Paz; el plan `EXPLAIN` muestra qué fragmentos se consultaron |
+| Venta local | Transacción 100 % local, que funciona con el nodo aislado |
+| Traspaso 2PC | Fases del protocolo paso a paso, stock antes y después y registro de decisiones |
+| Replicación del catálogo | Cambio de precio en La Paz y su propagación en vivo a cada nodo |
+| Simulación de fallas | Cortar el enlace o apagar el servidor de un nodo y verificar consultas y ventas |
+| Recuperación 2PC | Hacer caer el coordinador a mitad del traspaso y resolver las transacciones en duda |
+
+### Cómo probar la caída de un nodo
+
+**Desde el panel:** página *Simulación de fallas* → elegir el nodo y el tipo de falla → **Provocar falla** →
+pulsar **Probar** en cada verificación → **Restaurar nodo**.
+
+**Desde la consola:**
+
+```powershell
+python gestion.py aislar be      # caída del ENLACE: Beni sigue vendiendo localmente
+python gestion.py vender be      # funciona (autonomía local)
+python gestion.py sql lp "SELECT * FROM nacional.resumen_nacional_disponible()"   # informa fv6_be FUERA DE LÍNEA
+python gestion.py reconectar be
+
+python gestion.py apagar be      # caída TOTAL del servidor: Beni no atiende ni localmente
+python gestion.py vender sc      # los demás nodos siguen vendiendo
+python gestion.py encender be    # vuelve y la réplica del catálogo se pone al día sola
+```
 
 ## 7. Pruebas
 
@@ -156,7 +175,7 @@ python -m pruebas.ejecutar_pruebas          # todos los casos
 python -m pruebas.ejecutar_pruebas P7 P10   # casos concretos
 ```
 
-En modo `lab` corren los 13 casos. En modo `red` (desde el equipo de consola) corren P0, P7, P9, P10 y
+En modo `lab` corren los 14 casos. En modo `red` (desde el equipo de consola) corren P0, P7, P9, P10 y
 P11; los casos de fallas se demuestran cortando el enlace real del equipo (ver sección 9).
 
 | Caso | Escenario | Resultado medido |
@@ -174,6 +193,7 @@ P11; los casos de fallas se demuestran cortando el enlace real del equipo (ver s
 | P10 | 20 traspasos simultáneos sobre 100 unidades | 10 confirmados, stock nunca negativo, total nacional conservado |
 | P11 | Seguridad: matriz CRUD | 4/4 operaciones prohibidas rechazadas por el gestor |
 | P12 | Caída del nodo central | Los demás nodos siguen vendiendo |
+| P13 | Caída total de Beni (servidor apagado) | Los demás venden; al encenderlo recibe los cambios pendientes del catálogo |
 
 ## 8. Operación
 
@@ -182,6 +202,8 @@ P11; los casos de fallas se demuestran cortando el enlace real del equipo (ver s
 | Estado de los nodos | `python gestion.py estado` |
 | Cortar el enlace WAN de un nodo (sigue operando local) | `python gestion.py aislar be` |
 | Restablecer el enlace | `python gestion.py reconectar be` |
+| Apagar el servidor de un nodo (caída total) | `python gestion.py apagar be` |
+| Volver a encender el nodo | `python gestion.py encender be` |
 | Venta en la consola local de un nodo | `python gestion.py vender be` |
 | SQL en un nodo | `python gestion.py sql lp "SELECT * FROM nacional.resumen_nacional_disponible()"` |
 | Traspaso 2PC | `python -m sgbdd.coordinador_2pc --origen 201 --destino 601 --producto 15 --cantidad 50` |
@@ -271,8 +293,9 @@ equipo con ningún participante, como en una arquitectura real.
 | Aspecto | Modo `lab` (1 equipo) | Modo `red` (7 equipos) |
 |---|---|---|
 | Cortar el enlace de un nodo | `python gestion.py aislar be` o el panel | `tailscale down` en el equipo del nodo (`tailscale up` para volver) |
+| Apagar un nodo | `python gestion.py apagar be` o el panel | `python gestion.py apagar be` **en el equipo del nodo** |
 | Venta con el nodo aislado | `python gestion.py vender be` desde cualquier lugar | `python gestion.py vender be` **en el equipo del nodo** |
-| Pruebas automáticas | P0–P12 | P0, P7, P9, P10 y P11 desde E7; los casos de fallas (P1–P6, P8, P12) se demuestran a mano con `tailscale down` |
+| Pruebas automáticas | P0–P13 | P0, P7, P9, P10 y P11 desde E7; los casos de fallas (P1–P6, P8, P12, P13) se demuestran a mano con `tailscale down` |
 | Cambios en `sql/comun` | `python gestion.py reiniciar --si` | `reiniciar --si` en cada equipo afectado y repetir los pasos 5 a 7 |
 
 > [!WARNING]
@@ -306,8 +329,12 @@ equipo con ningún participante, como en una arquitectura real.
 │   ├── recuperacion_2pc.py     resolución de transacciones en duda
 │   └── operacion.py            despliegue, configuración, estado, simulación de fallas
 ├── gestion.py                  consola de operación
-├── dashboard/app.py            panel de demostración (Streamlit)
-├── pruebas/ejecutar_pruebas.py casos de prueba P0-P12
+├── dashboard/                  panel de demostración (Streamlit)
+│   ├── app.py                  navegación y estado de los nodos
+│   ├── comun.py                utilidades compartidas
+│   └── app_pages/              una página por funcionalidad
+├── .streamlit/config.toml      tema visual del panel
+├── pruebas/ejecutar_pruebas.py casos de prueba P0-P13
 └── docs/                       especificación técnica y plan de implementación
 ```
 

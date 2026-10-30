@@ -34,6 +34,8 @@ def consola(nodo, comando, usuario="postgres"):
     r = docker("exec", nodo.contenedor, "psql", "-X", "-v", "ON_ERROR_STOP=1", "-A", "-t",
                "-F", "|", "-U", usuario, "-d", nodo.bd, "-c", comando, check=False)
     if r.returncode != 0:
+        if "is not running" in r.stderr:
+            raise RuntimeError(f"{nodo} está apagado: el servidor no atiende ni siquiera localmente")
         raise RuntimeError(r.stderr.strip())
     return [linea.split("|") for linea in r.stdout.strip().splitlines() if linea]
 
@@ -59,6 +61,29 @@ def _exigir_lab(nodo):
     if MODO != "lab" or not nodo.local:
         raise RuntimeError(f"En modo red, corte el enlace de {nodo} en su equipo: `tailscale down` "
                            "(y `tailscale up` para reconectar)")
+
+
+def _exigir_local(nodo):
+    if not nodo.local:
+        raise RuntimeError(f"{nodo} no está en este equipo: ejecute el comando en el equipo que lo aloja")
+
+
+def apagado(nodo) -> bool:
+    r = docker("inspect", "-f", "{{.State.Running}}", nodo.contenedor, check=False)
+    return r.returncode == 0 and r.stdout.strip() == "false"
+
+
+def apagar(nodo):
+    """Caída total: detiene el servidor del nodo (deja de operar incluso localmente)."""
+    _exigir_local(nodo)
+    docker("stop", nodo.contenedor)
+
+
+def encender(nodo, informar=print):
+    """Reinicia el servidor; la réplica del catálogo se pone al día sola al volver."""
+    _exigir_local(nodo)
+    docker("start", nodo.contenedor)
+    esperar_sanos([nodo], informar)
 
 
 def aislado(nodo) -> bool:
@@ -145,7 +170,7 @@ def reiniciar():
 def estado_nodos():
     filas = []
     for nodo in NODOS.values():
-        fila = {"nodo": str(nodo), "contenedor": nodo.contenedor, "direccion": f"{nodo.host}:{nodo.port}",
+        fila = {"cod": nodo.cod, "nodo": str(nodo), "contenedor": nodo.contenedor, "estado": "SIN CONEXIÓN", "direccion": f"{nodo.host}:{nodo.port}",
                 "en_linea": False, "ventas": None, "2pc_pendientes": None, "replicacion": None}
         try:
             with conectar(nodo, "fdw_lector", autocommit=True) as c:
@@ -162,10 +187,12 @@ def estado_nodos():
                                        WHERE subname LIKE 'sub_catalogo_%' LIMIT 1""").fetchone()
                     replicacion = ("sin suscripción" if sub is None
                                    else "suscripción activa" if sub[0] else "suscripción detenida")
-            fila.update(en_linea=True, ventas=ventas, **{"2pc_pendientes": pendientes}, replicacion=replicacion)
+            fila.update(en_linea=True, estado="EN LÍNEA", ventas=ventas, **{"2pc_pendientes": pendientes}, replicacion=replicacion)
         except psycopg.Error as e:
             fila["replicacion"] = f"sin conexión ({e.__class__.__name__})"
-        if MODO == "lab" and nodo.local and aislado(nodo):
-            fila["replicacion"] = "AISLADO de la WAN"
+        if nodo.local and apagado(nodo):
+            fila.update(estado="APAGADO", replicacion="servidor detenido")
+        elif MODO == "lab" and nodo.local and aislado(nodo):
+            fila.update(estado="AISLADO", replicacion="AISLADO de la WAN")
         filas.append(fila)
     return filas

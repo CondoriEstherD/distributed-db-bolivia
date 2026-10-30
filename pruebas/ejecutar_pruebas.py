@@ -2,11 +2,11 @@
 
 Modo lab: los 6 nodos en este equipo, levantados y configurados; corren los 13 casos.
 Modo red (p. ej. desde el equipo de consola): corren P0, P7, P9, P10 y P11, que no necesitan
-cortar enlaces. Los casos de fallas (P1-P6, P8, P12) se demuestran a mano con `tailscale down`
+cortar enlaces. Los casos de fallas (P1-P6, P8, P12, P13) se demuestran a mano con `tailscale down`
 en el equipo del nodo.
 Uso:  python -m pruebas.ejecutar_pruebas            (todos)
       python -m pruebas.ejecutar_pruebas P7 P8      (algunos)
-Cada prueba deja los nodos reconectados al terminar, pase o falle.
+Cada prueba deja los nodos encendidos y reconectados al terminar, pase o falle.
 """
 import subprocess
 import sys
@@ -251,9 +251,23 @@ def p12():
     return f"La Paz aislada; SC, CB y BE siguieron vendiendo: {ventas}"
 
 
-PRUEBAS = {f.__name__.upper(): f for f in (p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12)}
-# Necesitan aislar un nodo con docker network disconnect, posible solo en modo lab.
-CON_AISLAMIENTO = {"P1", "P2", "P3", "P4", "P5", "P6", "P8", "P12"}
+def p13():
+    """Caída total de Beni (servidor apagado) y reincorporación"""
+    op.apagar(BE)
+    v_sc = op.vender_local(SC)
+    filas = consultar(LP, "SELECT fragmento, estado FROM resumen_nacional_disponible()")
+    caidos = {f for f, e in filas if e.startswith("FUERA")}
+    assert len(caidos) == 1 and caidos.pop().endswith("fv6_be"), caidos
+    _, nuevo = cambiar_precio(1)
+    op.encender(BE, informar=silencio)
+    t = esperar(lambda: precio(BE, 1) == nuevo, 90)
+    return (f"Beni apagado: SC vendió #{v_sc['id_venta']} y la consulta tolerante marcó fv6_be FUERA DE LÍNEA; "
+            f"al encenderlo recibió el precio pendiente en {t:.1f} s")
+
+
+PRUEBAS = {f.__name__.upper(): f for f in (p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13)}
+# Necesitan aislar o apagar un nodo de este equipo con Docker, posible solo en modo lab.
+CON_AISLAMIENTO = {"P1", "P2", "P3", "P4", "P5", "P6", "P8", "P12", "P13"}
 
 
 def main():
@@ -275,6 +289,8 @@ def main():
         finally:
             if MODO == "lab":
                 for nodo in NODOS.values():
+                    if op.apagado(nodo):
+                        op.encender(nodo, informar=silencio)
                     op.reconectar(nodo)
         resultados.append((clave, ok))
         print(f"  {'✔ PASA' if ok else '✖ FALLA'} ({time.time() - inicio:.1f} s) — {detalle}", flush=True)

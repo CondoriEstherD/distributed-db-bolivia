@@ -5,6 +5,8 @@
   python gestion.py estado               salud, volumen y replicación de los 6 nodos
   python gestion.py aislar be            corta el enlace WAN del nodo (modo lab)
   python gestion.py reconectar be        restablece el enlace
+  python gestion.py apagar be            caída total: detiene el servidor del nodo
+  python gestion.py encender be          vuelve a encender el nodo
   python gestion.py vender be            venta de demostración en la consola local del nodo
   python gestion.py sql lp "SELECT 1"    SQL en la consola local de un nodo (superusuario)
   python gestion.py recuperar            resuelve transacciones 2PC en duda
@@ -45,7 +47,7 @@ def main():
     s = sub.add_parser("levantar"); s.add_argument("--admin", action="store_true", help="incluye pgAdmin")
     sub.add_parser("configurar")
     sub.add_parser("estado")
-    for nombre in ("aislar", "reconectar", "vender"):
+    for nombre in ("aislar", "reconectar", "apagar", "encender", "vender"):
         sub.add_parser(nombre).add_argument("nodo", type=_nodo)
     s = sub.add_parser("sql"); s.add_argument("nodo", type=_nodo); s.add_argument("consulta")
     s = sub.add_parser("recuperar"); s.add_argument("--edad-minima", type=float, default=30)
@@ -65,6 +67,10 @@ def main():
             op.aislar(a.nodo); print(f"{a.nodo} aislado de la WAN (sigue operando localmente)")
         elif a.comando == "reconectar":
             op.reconectar(a.nodo); print(f"{a.nodo} reconectado a la WAN")
+        elif a.comando == "apagar":
+            op.apagar(a.nodo); print(f"{a.nodo} APAGADO (servidor detenido)")
+        elif a.comando == "encender":
+            op.encender(a.nodo); print(f"{a.nodo} encendido; la réplica del catálogo se sincroniza sola")
         elif a.comando == "vender":
             print(op.vender_local(a.nodo))
         elif a.comando == "sql":

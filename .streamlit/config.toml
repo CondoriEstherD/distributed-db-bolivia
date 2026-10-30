@@ -1,0 +1,28 @@
+# Tema del panel de demostración (colores institucionales del documento de especificación).
+[theme]
+base = "light"
+primaryColor = "#1F3864"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F3F6FA"
+textColor = "#1E293B"
+borderColor = "#D6DEE8"
+showWidgetBorder = true
+showSidebarBorder = true
+baseRadius = "6px"
+font = "'Inter':https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+codeFont = "'JetBrains Mono':https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+baseFontSize = 14
+headingFontWeights = [700, 600, 600, 600, 500, 500]
+greenColor = "#15803D"
+redColor = "#B91C1C"
+blueColor = "#2E75B6"
+chartCategoricalColors = ["#1F3864", "#2E75B6", "#BF8F00", "#548235", "#C55A11", "#C00000", "#7C3AED", "#0E7490", "#64748B"]
+
+[theme.sidebar]
+backgroundColor = "#F3F6FA"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false
