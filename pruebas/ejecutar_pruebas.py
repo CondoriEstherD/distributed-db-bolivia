@@ -1,6 +1,9 @@
 """Casos de prueba del plan de pruebas (sección 15 de la especificación).
 
-Requiere MODO=lab con los 6 nodos locales levantados y configurados.
+Modo lab: los 6 nodos en este equipo, levantados y configurados; corren los 13 casos.
+Modo red (p. ej. desde el equipo de consola): corren P0, P7, P9, P10 y P11, que no necesitan
+cortar enlaces. Los casos de fallas (P1-P6, P8, P12) se demuestran a mano con `tailscale down`
+en el equipo del nodo.
 Uso:  python -m pruebas.ejecutar_pruebas            (todos)
       python -m pruebas.ejecutar_pruebas P7 P8      (algunos)
 Cada prueba deja los nodos reconectados al terminar, pase o falle.
@@ -14,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 import psycopg
 
 from sgbdd import operacion as op
-from sgbdd.config import NODOS, RAIZ, conectar, nodo_de_almacen
+from sgbdd.config import MODO, NODOS, RAIZ, conectar, nodo_de_almacen
 from sgbdd.coordinador_2pc import TraspasoError, traspasar
 from sgbdd.recuperacion_2pc import recuperar
 
@@ -30,8 +33,10 @@ def consultar(nodo, sql, params=None, usuario="rol_analista"):
 
 
 def valor(nodo, sql):
-    """Lectura por la consola local: funciona aunque el nodo esté aislado."""
-    return op.consola(nodo, sql)[0][0]
+    """Consola local si el nodo está en este equipo (funciona aunque esté aislado); si no, por red."""
+    if nodo.local:
+        return op.consola(nodo, sql)[0][0]
+    return str(consultar(nodo, sql, usuario="rol_auditor" if nodo is LP else "fdw_lector")[0][0])
 
 
 def stock(almacen, producto):
@@ -203,7 +208,8 @@ def p9():
 
 def p10():
     """Concurrencia: 20 traspasos simultáneos sobre 100 unidades"""
-    op.consola(SC, f"UPDATE inventario SET stock_actual = 100 WHERE id_almacen={ALM_SC} AND id_producto=2")
+    with conectar(SC, "coordinador_2pc", autocommit=True) as c:
+        c.execute("UPDATE inventario SET stock_actual = 100 WHERE id_almacen = %s AND id_producto = 2", (ALM_SC,))
     total = stock_nacional(2)
 
     def uno(_):
@@ -246,13 +252,20 @@ def p12():
 
 
 PRUEBAS = {f.__name__.upper(): f for f in (p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12)}
+# Necesitan aislar un nodo con docker network disconnect, posible solo en modo lab.
+CON_AISLAMIENTO = {"P1", "P2", "P3", "P4", "P5", "P6", "P8", "P12"}
 
 
 def main():
-    elegidas = [a.upper() for a in sys.argv[1:]] or list(PRUEBAS)
+    manuales = CON_AISLAMIENTO if MODO == "red" else set()
+    elegidas = [a.upper() for a in sys.argv[1:]] or [c for c in PRUEBAS if c not in manuales]
     resultados = []
     for clave in elegidas:
         prueba = PRUEBAS[clave]
+        if clave in manuales:
+            print(f"▶ {clave} {prueba.__doc__}: en modo red se demuestra a mano "
+                  "(`tailscale down` en el equipo del nodo)", flush=True)
+            continue
         print(f"▶ {clave} {prueba.__doc__}…", flush=True)
         inicio = time.time()
         try:
@@ -260,8 +273,9 @@ def main():
         except Exception as e:  # una prueba fallida no detiene las demás
             detalle, ok = f"{e.__class__.__name__}: {e}", False
         finally:
-            for nodo in NODOS.values():
-                op.reconectar(nodo)
+            if MODO == "lab":
+                for nodo in NODOS.values():
+                    op.reconectar(nodo)
         resultados.append((clave, ok))
         print(f"  {'✔ PASA' if ok else '✖ FALLA'} ({time.time() - inicio:.1f} s) — {detalle}", flush=True)
     fallas = [c for c, ok in resultados if not ok]

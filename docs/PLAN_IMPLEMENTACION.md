@@ -4,6 +4,8 @@
 > difiere en algunos detalles operativos. Para comandos y configuración vigentes ver el `README.md`:
 > puertos **15431–15436** (no 5432/5433), un único archivo **`.env`** (no `nodos.env`), código en el
 > paquete **`sgbdd/`**, operación con **`gestion.py`** y pruebas con **`python -m pruebas.ejecutar_pruebas`**.
+> Despliegue final (**equipo de 7 integrantes**): **7 laptops**, una por nodo (E1-E6) y una **consola** (E7) con el
+> panel, el coordinador 2PC y las pruebas. Esto reemplaza los repartos de 3-4 laptops de §0.2, §0.3, §8 y §11.3.
 
 > Plan técnico para construir, probar y defender el prototipo. Cada fase tiene: objetivo, tareas,
 > entregable y **criterio de "terminado"** (lo que tiene que funcionar antes de pasar a la siguiente).
@@ -42,8 +44,8 @@ se gana con SQL, red y 2PC. La interfaz solo sirve para *mostrar* eso con clarid
 | Etapa | Dónde | Semanas | Qué se hace |
 |---|---|---|---|
 | **1. Laboratorio** | **1 laptop**, 6 contenedores Docker | 1 → 3 (inicio) | Todo el SQL, réplica, fdw, 2PC y pruebas P1-P12. Rápido de reiniciar. |
-| **2. Despliegue distribuido** | **4 laptops** con Docker + **Tailscale** | 3 | Los **mismos scripts**, solo cambia `nodos.env`. Repetir P1-P12 entre laptops. |
-| **3. Defensa** | 4 laptops (Beni sola en L4) | Día D | Guion §7.2. Plan B: modo 1 laptop + video. |
+| **2. Despliegue distribuido** | **7 laptops** (6 nodos + consola) con Docker + **Tailscale** | 3 | Los **mismos scripts**, solo cambia `.env`. Repetir P0-P12 entre laptops. |
+| **3. Defensa** | 7 laptops (un nodo por laptop + consola E7) | Día D | Guion §7.2. Plan B: modo 1 laptop + video. |
 
 > Las **VMs (§12) quedan como opción**, no como requisito: Docker en varias laptops con Tailscale ya es un despliegue
 > distribuido real (cada laptop = un departamento, la VPN = la WAN). Solo usar VMs si el ingeniero lo exige.
@@ -75,11 +77,11 @@ Vercel/hosting web (ver §6.1), Grafana/Metabase (bonito pero no suma puntos de 
 ## 0.3 Qué instalar en cada laptop (checklist)
 - [ ] Docker Desktop con WSL2 (`docker run hello-world` funciona)
 - [ ] Git + acceso al repo de GitHub
-- [ ] Tailscale con la cuenta del equipo (`tailscale status` muestra las 4 laptops)
-- [ ] Python 3.12+ → `pip install psycopg[binary] streamlit pandas` (al menos en L1 y L3)
+- [ ] Tailscale con la cuenta del equipo (`tailscale status` muestra las 7 laptops)
+- [ ] Python 3.12+ → `pip install psycopg[binary] streamlit pandas` (en las 7)
 - [ ] VS Code (gratis) con extensión de Markdown / SQL
-- [ ] Regla de firewall para puertos 5432-5433 (§11.5)
-- [ ] (Solo L1) pgAdmin o DBeaver
+- [ ] Regla de firewall para el puerto del nodo propio, 15431-15436 (E1-E6; la consola E7 no la necesita)
+- [ ] (Solo E1) pgAdmin o DBeaver
 
 ---
 
@@ -609,10 +611,29 @@ Plan B: **video grabado** de la demo completa (OBS Studio, gratis) por si falla 
 
 ---
 
-## 8. Cronograma y reparto (equipo de 4)
+## 8. Cronograma y reparto (equipo de 7)
 
-| Semana | Integrante A (Arquitecto/BD) | B (Infra/Datos) | C (Transacciones) | D (Interfaz/Docs) |
-|---|---|---|---|---|
+Cada integrante es **responsable de un nodo** (su laptop en la defensa) y además de un frente de trabajo:
+
+| Integrante | Equipo en la defensa | Frente de trabajo |
+|---|---|---|
+| A | E1 · Nodo 1 La Paz | Arquitectura: ER, fragmentación, esquema `nacional`, fdw, consultas C1-C8 |
+| B | E2 · Nodo 2 Santa Cruz | Infraestructura: Docker Compose, scripts de inicialización, Tailscale |
+| C | E3 · Nodo 3 Cochabamba | Transacciones: coordinador 2PC, `traspasos_log`, recuperación |
+| D | E4 · Nodo 4 Tarija | Datos: carga de 50 000 ventas, reglas de corrección (P0) |
+| E | E5 · Nodo 5 Oruro | Replicación del catálogo y seguridad (roles, matriz CRUD) |
+| F | E6 · Nodo 6 Beni | Fallas y autonomía: cortes de enlace, ventas aisladas (P1-P6, P12) |
+| G | E7 · Consola | Panel Streamlit, pruebas automáticas, documentación y guion de la defensa |
+
+| Semana | Entregable del grupo |
+|---|---|
+| 1 | ER, fragmentos, matriz CRUD, docker-compose y scripts de inicialización |
+| 2 | Carga de datos, replicación, fdw, coordinador 2PC y panel |
+| 3 | Pruebas P0-P12 en 1 laptop y luego en 7, manual, guion y video |
+
+Integración diaria en GitHub; el `README` documenta cómo levantar todo.
+
+---|---|---|---|---|
 | 1 | ER, fragmentos, fórmulas, matriz CRUD | docker-compose, init scripts | Diseño protocolo 2PC + log | Repo, plantillas de documento, diagramas |
 | 2 | Vistas particionadas, fdw, consultas | Carga 50k, replicación, roles | Coordinador + recuperación | Dashboard pantallas 1-3 |
 | 3 | Pruebas P1-P6, consistencia | Pruebas de red (netem) | Pruebas P7-P10 | Pantallas 4-6, manual, guion, video |
@@ -688,17 +709,21 @@ con su servidor de BD, y las sedes se unen por una **WAN**:
 
 ### 11.3 Reparto de nodos en laptops
 
-**Con 4 laptops** (recomendado, Beni queda sola para desconectarla físicamente):
+**Con 7 laptops** (despliegue final, un nodo por laptop):
 | Laptop | Nodos | Además corre |
 |---|---|---|
-| L1 "La Paz" | Nodo 1 LP | pgAdmin, dashboard Streamlit, vistas nacionales |
-| L2 | Nodo 2 SC + Nodo 4 TJ | — |
-| L3 | Nodo 3 CB + Nodo 5 OR | **Coordinador 2PC** + `traspasos_log` |
-| L4 "Beni" | Nodo 6 BE | dashboard local de caja (para mostrar que sigue vendiendo aislada) |
+| E1 "La Paz" | Nodo 1 LP | esquema `nacional`, FC2, publicación del catálogo, pgAdmin (opcional) |
+| E2 | Nodo 2 SC | — |
+| E3 | Nodo 3 CB | `traspasos_log` (registro de decisiones 2PC) |
+| E4 | Nodo 4 TJ (TJ + CH) | — |
+| E5 | Nodo 5 OR (OR + PO) | — |
+| E6 "Beni" | Nodo 6 BE (BE + PA) | ventas en su consola local para mostrar que sigue vendiendo aislada |
+| E7 "Consola" | ninguno (`NODOS_LOCALES` vacío) | **dashboard Streamlit, coordinador 2PC, recuperación y pruebas**; no necesita Docker |
 
-**Con 3 laptops**: L1 = LP · L2 = SC + TJ + CB · L3 = OR + BE.
+La consola separada permite cortar el enlace de cualquier nodo, incluso La Paz, sin perder el panel ni el
+coordinador. Pasos detallados en la sección 9 del `README.md`.
 
-Requisito por laptop: Docker Desktop (WSL2) y ~1 GB de RAM libre por nodo.
+Requisito por laptop de nodo: Docker Desktop (WSL2) y ~2 GB de RAM libre.
 Alternativa si una laptop no soporta Docker: **PostgreSQL 16 instalado directamente** (instalador gratuito de EDB); los scripts SQL son los mismos.
 
 ### 11.4 Mismo código, distinta dirección: el archivo `nodos.env`

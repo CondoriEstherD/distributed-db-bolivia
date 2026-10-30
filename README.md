@@ -31,7 +31,7 @@ replicación lógica, transparencia de distribución y transacciones distribuida
 9. [Despliegue en varios equipos](#9-despliegue-en-varios-equipos)
 10. [Estructura del repositorio](#10-estructura-del-repositorio)
 11. [Solución de problemas](#11-solución-de-problemas)
-12. [Documentación y equipo](#12-documentación-y-equipo)
+12. [Documentación](#12-documentación)
 
 ---
 
@@ -156,6 +156,9 @@ python -m pruebas.ejecutar_pruebas          # todos los casos
 python -m pruebas.ejecutar_pruebas P7 P10   # casos concretos
 ```
 
+En modo `lab` corren los 13 casos. En modo `red` (desde el equipo de consola) corren P0, P7, P9, P10 y
+P11; los casos de fallas se demuestran cortando el enlace real del equipo (ver sección 9).
+
 | Caso | Escenario | Resultado medido |
 |---|---|---|
 | P0 | Reglas de corrección de la fragmentación | 50 000 ventas en 9 departamentos, sin duplicados |
@@ -193,39 +196,94 @@ del nodo que los creó (`6000002501` → Beni).
 
 ## 9. Despliegue en varios equipos
 
-Los mismos scripts funcionan en una laptop (modo `lab`) o en cuatro (modo `red`); solo cambia `.env`.
+Los mismos scripts funcionan en una laptop (modo `lab`) o en siete (modo `red`); solo cambia `.env`.
+En modo red cada nodo vive en su propio equipo, como una sucursal real, y un séptimo equipo actúa como
+**consola de operación**: no aloja nodos, solo se conecta a ellos.
 
 ```mermaid
 flowchart LR
-    L1["L1<br/>La Paz"] --- T(("Tailscale<br/>100.64.0.0/10"))
-    L2["L2<br/>Santa Cruz + Tarija"] --- T
-    L3["L3<br/>Cochabamba + Oruro<br/>+ coordinador 2PC"] --- T
-    L4["L4<br/>Beni"] --- T
+    E1["E1 · La Paz<br/>nodo1_lp :15431"] --- T(("Tailscale<br/>100.64.0.0/10"))
+    E2["E2 · Santa Cruz<br/>nodo2_sc :15432"] --- T
+    E3["E3 · Cochabamba<br/>nodo3_cb :15433"] --- T
+    E4["E4 · Tarija + Chuquisaca<br/>nodo4_tj :15434"] --- T
+    T --- E5["E5 · Oruro + Potosí<br/>nodo5_or :15435"]
+    T --- E6["E6 · Beni + Pando<br/>nodo6_be :15436"]
+    T --- E7["E7 · Consola<br/>panel · coordinador 2PC · pruebas"]
 ```
 
-1. Instalar Tailscale en los 4 equipos con la misma cuenta y anotar cada IP (`tailscale ip -4`).
-2. Clonar el repositorio y crear `.env` con **las mismas contraseñas y direcciones** en todos; solo cambia
-   `NODOS_LOCALES`. Ejemplo para L2:
+| Equipo | Aloja | `NODOS_LOCALES` | Necesita |
+|---|---|---|---|
+| E1 | Nodo 1 · La Paz (esquema `nacional`, FC2, publicación del catálogo) | `lp` | Docker, Python, Tailscale, puerto 15431 abierto |
+| E2 | Nodo 2 · Santa Cruz | `sc` | Docker, Python, Tailscale, puerto 15432 abierto |
+| E3 | Nodo 3 · Cochabamba (registro `traspasos_log` del 2PC) | `cb` | Docker, Python, Tailscale, puerto 15433 abierto |
+| E4 | Nodo 4 · Tarija y Chuquisaca | `tj` | Docker, Python, Tailscale, puerto 15434 abierto |
+| E5 | Nodo 5 · Oruro y Potosí | `or` | Docker, Python, Tailscale, puerto 15435 abierto |
+| E6 | Nodo 6 · Beni y Pando | `be` | Docker, Python, Tailscale, puerto 15436 abierto |
+| E7 | Consola: panel Streamlit, coordinador 2PC, recuperación y pruebas | *(vacío)* | Python y Tailscale (Docker no es necesario) |
+
+Ventajas de la consola separada: cuando se corta el enlace de cualquier nodo (incluido La Paz), el panel
+y el coordinador siguen funcionando y muestran la falla en vivo. Además, el coordinador 2PC no comparte
+equipo con ningún participante, como en una arquitectura real.
+
+### Pasos
+
+1. **Tailscale.** Instalarlo en los 7 equipos e iniciar sesión con **una misma cuenta del grupo**
+   (el plan gratuito admite hasta 100 dispositivos). Anotar la IP de cada equipo con `tailscale ip -4`.
+2. **Repositorio.** Clonarlo en los 7 equipos (sección 5).
+3. **`.env`.** Debe ser **idéntico en los 7 equipos** (mismas contraseñas, mismas IP y puertos), salvo
+   `NODOS_LOCALES`. Ejemplo para E2:
    ```ini
+   PG_PASSWORD=<la misma en todos>
+   APP_PASSWORD=<la misma en todos>
    MODO=red
-   NODOS_LOCALES=sc,tj
+   NODOS_LOCALES=sc          # E1=lp · E3=cb · E4=tj · E5=or · E6=be · E7 vacío
    BIND_IP=0.0.0.0
-   HOST_LP=100.64.0.1
-   HOST_SC=100.64.0.2
-   HOST_TJ=100.64.0.2
+   HOST_LP=100.64.0.1        # IP de Tailscale de E1
+   HOST_SC=100.64.0.2        # IP de Tailscale de E2
    HOST_CB=100.64.0.3
-   HOST_OR=100.64.0.3
-   HOST_BE=100.64.0.4
-   # los puertos PORT_* se mantienen: 15431 … 15436
+   HOST_TJ=100.64.0.4
+   HOST_OR=100.64.0.5
+   HOST_BE=100.64.0.6
+   # PORT_LP … PORT_BE se mantienen: 15431 … 15436
    ```
-3. Abrir los puertos en el firewall de Windows (PowerShell como administrador):
+4. **Firewall (E1 a E6).** Abrir solo el puerto del nodo propio, en PowerShell como administrador
+   (ejemplo para E2):
    ```powershell
-   New-NetFirewallRule -DisplayName "SGBDD PostgreSQL" -Direction Inbound -Protocol TCP -LocalPort 15431-15436 -Action Allow
+   New-NetFirewallRule -DisplayName "SGBDD nodo" -Direction Inbound -Protocol TCP -LocalPort 15432 -Action Allow
    ```
-4. Verificar la conectividad desde otro equipo: `Test-NetConnection 100.64.0.2 -Port 15432`.
-5. En cada equipo, `python gestion.py levantar`. Con todos arriba, `python gestion.py configurar` en cada
-   equipo, dejando L1 para el final (carga FC2 leyendo los 6 nodos).
-6. Para cortar el enlace durante la demostración: `tailscale down` en el equipo del nodo (`tailscale up` para volver).
+5. **Levantar (E1 a E6).** `python gestion.py levantar` en cada equipo. Cada nodo carga solo sus datos.
+6. **Conectividad.** Desde E7, comprobar los 6 puertos:
+   ```powershell
+   Test-NetConnection 100.64.0.2 -Port 15432
+   ```
+   Desde E1, comprobar que el **contenedor** de La Paz llega a los demás nodos (lo usa `postgres_fdw`):
+   ```powershell
+   docker exec nodo1_lp pg_isready -h 100.64.0.2 -p 15432
+   ```
+7. **Configurar, en este orden.** Primero E2 a E6 (`python gestion.py configurar`: suscripción al
+   catálogo) y **al final E1** (crea el esquema `nacional` y carga FC2 leyendo los 6 nodos; si algún nodo
+   está apagado, avisa y basta repetirlo).
+8. **Verificar desde E7.** `python gestion.py estado` debe mostrar los 6 nodos en línea y la replicación
+   activa. Luego, `python -m pruebas.ejecutar_pruebas` y `streamlit run dashboard/app.py`.
+
+### Diferencias del modo red
+
+| Aspecto | Modo `lab` (1 equipo) | Modo `red` (7 equipos) |
+|---|---|---|
+| Cortar el enlace de un nodo | `python gestion.py aislar be` o el panel | `tailscale down` en el equipo del nodo (`tailscale up` para volver) |
+| Venta con el nodo aislado | `python gestion.py vender be` desde cualquier lugar | `python gestion.py vender be` **en el equipo del nodo** |
+| Pruebas automáticas | P0–P12 | P0, P7, P9, P10 y P11 desde E7; los casos de fallas (P1–P6, P8, P12) se demuestran a mano con `tailscale down` |
+| Cambios en `sql/comun` | `python gestion.py reiniciar --si` | `reiniciar --si` en cada equipo afectado y repetir los pasos 5 a 7 |
+
+> [!WARNING]
+> - El **equipo de cada nodo debe permanecer encendido**: si se apaga o suspende, ese fragmento queda
+>   fuera de línea y las consultas nacionales que lo necesitan fallan (de forma controlada).
+>   Desactivar la suspensión durante la demostración.
+> - Si un equipo cambia de IP de Tailscale, hay que actualizar `.env` en los 7 equipos y repetir el paso 7.
+> - Cada equipo de nodo necesita unos 2 GB de RAM libres (Docker Desktop + un PostgreSQL).
+> - **Respaldo:** si un equipo falla el día de la defensa, cualquier otro puede alojar ese nodo
+>   (agregarlo a su `NODOS_LOCALES` y cambiar su `HOST_*` en todos). Como último recurso, el modo
+>   `lab` levanta los 6 nodos en una sola laptop.
 
 ## 10. Estructura del repositorio
 
@@ -264,20 +322,10 @@ flowchart LR
 | Conexiones lentas en Windows | Use `127.0.0.1` en lugar de `localhost` en `HOST_*` (evita el intento por IPv6). |
 | Quedan filas bloqueadas tras un fallo del coordinador | `python gestion.py recuperar` (o `--edad-minima 0`). |
 
-## 12. Documentación y equipo
+## 12. Documentación
 
 - [Especificación técnica (APA 7)](docs/Especificacion_Tecnica_SGBDD_BoliviaDistribucion.docx)
 - [Plan de implementación](docs/PLAN_IMPLEMENTACION.md)
-
-**Asignatura:** Base de Datos II · Semestre 2-2026 · [Nombre de la universidad]
-**Docente:** Ing. [Nombre del docente]
-
-| Integrante | Responsabilidad |
-|---|---|
-| [Integrante 1] | Nodo central, transparencia y consultas globales |
-| [Integrante 2] | Fragmentación y datos de los nodos regionales |
-| [Integrante 3] | Coordinador 2PC y recuperación |
-| [Integrante 4] | Seguridad, pruebas y panel de demostración |
 
 ### Referencias
 

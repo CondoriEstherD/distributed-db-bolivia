@@ -81,6 +81,10 @@ def reconectar(nodo):
 
 # ------------------------------------------------------------------ despliegue
 def levantar(admin=False, informar=print):
+    if not locales():
+        # Sin servicios, `docker compose up` levantaría los 6 nodos en este equipo.
+        raise RuntimeError("Este equipo no aloja nodos (NODOS_LOCALES vacío): es la consola de "
+                           "operación. Use `python gestion.py estado` o el panel.")
     servicios = [n.contenedor for n in locales()] + (["pgadmin"] if admin else [])
     args = ["compose"] + (["--profile", "admin"] if admin else []) + ["up", "-d", *servicios]
     docker(*args)
@@ -106,6 +110,8 @@ def esperar_sanos(nodos, informar=print, limite=600):
 def configurar(informar=print):
     """Configuración entre nodos (idempotente): suscripciones al catálogo y capa global en LP."""
     lp = NODOS["lp"]
+    if not locales():
+        informar("  Este equipo no aloja nodos (NODOS_LOCALES vacío): no hay nada que configurar.")
     for nodo in locales():
         if nodo is lp:
             continue
