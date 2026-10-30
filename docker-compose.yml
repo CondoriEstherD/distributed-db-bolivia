@@ -1,0 +1,157 @@
+# SGBDD BoliviaDistribución S.A. — un contenedor PostgreSQL 16 por nodo.
+# Uso normal: `python gestion.py levantar` (levanta solo los nodos de NODOS_LOCALES).
+
+name: sgbdd
+
+x-nodo: &nodo
+  image: postgres:16
+  restart: unless-stopped
+  env_file: .env
+  command: >-
+    postgres
+    -c wal_level=logical
+    -c max_prepared_transactions=50
+    -c max_replication_slots=10
+    -c max_wal_senders=10
+    -c max_slot_wal_keep_size=1GB
+    -c shared_buffers=128MB
+    -c timezone=America/La_Paz
+    -c hba_file=/etc/postgresql/pg_hba.conf
+  healthcheck:
+    # Por TCP: el servidor temporal de inicialización solo escucha por socket,
+    # así el nodo no se reporta sano hasta terminar de cargar sus datos.
+    test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d $${POSTGRES_DB}"]
+    interval: 3s
+    timeout: 3s
+    retries: 200
+  networks: [wan]
+
+services:
+  nodo1_lp:
+    <<: *nodo
+    container_name: nodo1_lp
+    hostname: nodo1_lp
+    environment:
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: bd_lp
+      NODO_NUM: 1
+      NODO_COD: lp
+      DEPTOS: "'LP'"
+      VENTAS: 12500
+    ports: ["${BIND_IP:-127.0.0.1}:${PORT_LP:-15431}:5432"]
+    volumes:
+      - datos_lp:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+      - ./docker/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ./sql:/sql:ro
+
+  nodo2_sc:
+    <<: *nodo
+    container_name: nodo2_sc
+    hostname: nodo2_sc
+    environment:
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: bd_sc
+      NODO_NUM: 2
+      NODO_COD: sc
+      DEPTOS: "'SC'"
+      VENTAS: 15000
+    ports: ["${BIND_IP:-127.0.0.1}:${PORT_SC:-15432}:5432"]
+    volumes:
+      - datos_sc:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+      - ./docker/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ./sql:/sql:ro
+
+  nodo3_cb:
+    <<: *nodo
+    container_name: nodo3_cb
+    hostname: nodo3_cb
+    environment:
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: bd_cb
+      NODO_NUM: 3
+      NODO_COD: cb
+      DEPTOS: "'CB'"
+      VENTAS: 10000
+    ports: ["${BIND_IP:-127.0.0.1}:${PORT_CB:-15433}:5432"]
+    volumes:
+      - datos_cb:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+      - ./docker/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ./sql:/sql:ro
+
+  nodo4_tj:
+    <<: *nodo
+    container_name: nodo4_tj
+    hostname: nodo4_tj
+    environment:
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: bd_tj
+      NODO_NUM: 4
+      NODO_COD: tj
+      DEPTOS: "'TJ','CH'"
+      VENTAS: 5000
+    ports: ["${BIND_IP:-127.0.0.1}:${PORT_TJ:-15434}:5432"]
+    volumes:
+      - datos_tj:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+      - ./docker/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ./sql:/sql:ro
+
+  nodo5_or:
+    <<: *nodo
+    container_name: nodo5_or
+    hostname: nodo5_or
+    environment:
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: bd_or
+      NODO_NUM: 5
+      NODO_COD: or
+      DEPTOS: "'OR','PO'"
+      VENTAS: 5000
+    ports: ["${BIND_IP:-127.0.0.1}:${PORT_OR:-15435}:5432"]
+    volumes:
+      - datos_or:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+      - ./docker/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ./sql:/sql:ro
+
+  nodo6_be:
+    <<: *nodo
+    container_name: nodo6_be
+    hostname: nodo6_be
+    environment:
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: bd_be
+      NODO_NUM: 6
+      NODO_COD: be
+      DEPTOS: "'BE','PA'"
+      VENTAS: 2500
+    ports: ["${BIND_IP:-127.0.0.1}:${PORT_BE:-15436}:5432"]
+    volumes:
+      - datos_be:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+      - ./docker/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ./sql:/sql:ro
+
+  pgadmin:
+    image: dpage/pgadmin4:8
+    profiles: [admin]
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: ${PG_PASSWORD}
+    ports: ["127.0.0.1:5050:80"]
+    networks: [wan]
+
+networks:
+  wan:
+    name: sgbdd_wan
+
+volumes:
+  datos_lp:
+  datos_sc:
+  datos_cb:
+  datos_tj:
+  datos_or:
+  datos_be:
