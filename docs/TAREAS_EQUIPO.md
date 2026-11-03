@@ -17,7 +17,7 @@ Cada integrante tiene una tarea ligada al nodo que administra en la defensa (rol
 
 ## Reglas para todos
 
-1. **Una rama por tarea:** `git checkout -b tarea-N-nombre`. Se integra a `main` solo mediante un *Pull Request* revisado por otro integrante, idealmente el integrante 7.
+1. **Solo la rama `main`:** no se crean otras ramas ni *Pull Requests*. Antes de empezar, `git pull origin main`; al terminar, un *commit* por tarea con un mensaje que empiece con `Tarea N:` y `git push origin main`.
 2. **`.env` nunca se sube.** Las contraseñas se comparten por un medio privado.
 3. **Cambios en `sql/`:** solo se aplican con los volúmenes vacíos. Después de cambiar cualquier archivo de esa carpeta, ejecutar:
    ```powershell
@@ -25,8 +25,8 @@ Cada integrante tiene una tarea ligada al nodo que administra en la defensa (rol
    python gestion.py levantar
    python gestion.py configurar
    ```
-4. **Condición para aprobar cualquier PR:** en localhost, `python -m pruebas.ejecutar_pruebas` da **14/14** y el panel abre sin errores (`streamlit run dashboard/app.py`).
-5. **Archivos compartidos entre tareas:** las tareas 4, 5 y 6 modifican `gestion.py` o `sgbdd/operacion.py`. Antes de abrir el PR, actualizar la rama con `git pull origin main` y volver a ejecutar las pruebas.
+4. **Condición para hacer push:** en localhost, `python -m pruebas.ejecutar_pruebas` da **14/14** y el panel abre sin errores (`streamlit run dashboard/app.py`).
+5. **Archivos compartidos entre tareas:** las tareas 4, 5 y 6 modifican `gestion.py` o `sgbdd/operacion.py`. Antes del push, ejecutar `git pull origin main`, resolver los conflictos si los hay y volver a ejecutar las pruebas.
 6. **Comentarios y mensajes** en español, con el mismo estilo del código existente.
 
 ---
@@ -194,7 +194,7 @@ Cada integrante tiene una tarea ligada al nodo que administra en la defensa (rol
 ---
 
 ## Tarea 7 · Pruebas automáticas en GitHub y pruebas del panel
-**Responsable:** Integrante 7 (interfaz y documentación · consola E7). Además revisa e integra los PR de los demás.
+**Responsable:** Integrante 7 (interfaz y documentación · consola E7). Además vigila el workflow de GitHub Actions después de cada push.
 **Archivos:** `.github/workflows/pruebas.yml` y `pruebas/test_panel.py` (nuevos), `README.md`
 
 1. **Pruebas del panel:** crear `pruebas/test_panel.py` con `streamlit.testing.v1.AppTest`.
@@ -210,9 +210,9 @@ Cada integrante tiene una tarea ligada al nodo que administra en la defensa (rol
    3. ejecute `python gestion.py levantar`, `python gestion.py configurar`, `python -m pruebas.ejecutar_pruebas` y `python -m pruebas.test_panel`;
    4. si algo falla, guarde los registros con `docker compose logs` como *artifact*.
 3. **Insignia:** reemplazar en el README la insignia fija "pruebas 14/14" por la insignia del workflow de GitHub Actions.
-4. **Proteger `main`:** en GitHub, Settings → Branches → regla que exija que el workflow pase antes de unir un PR.
+4. **Workflow en rojo:** si un push deja el workflow fallando, quien lo subió lo corrige en el siguiente commit antes de que nadie más suba cambios.
 
-**Terminado cuando:** el workflow pasa en verde en GitHub, la insignia del README lo refleja y un PR con una prueba rota queda bloqueado.
+**Terminado cuando:** el workflow pasa en verde en GitHub, la insignia del README lo refleja y un push con una prueba rota deja el workflow en rojo.
 
 ---
 
