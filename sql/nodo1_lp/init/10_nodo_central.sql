@@ -1,7 +1,7 @@
 -- =============================================================================
 -- Nodo 1 (La Paz) · inicialización: fragmento vertical FC2, roles centrales y
 -- publicación del catálogo maestro.
--- Variables psql: :app_password
+-- Variables psql: :pass_analista, :pass_auditor, :pass_admin_catalogo, :pass_replicador
 -- =============================================================================
 
 -- Fragmento FC2 = π id_cliente, limite_credito, saldo_pendiente, calificacion_riesgo,
@@ -18,10 +18,10 @@ CREATE TABLE clientes_financiero (
 COMMENT ON TABLE clientes_financiero IS
     'Fragmento vertical FC2 (datos financieros). Ubicación exclusiva: Nodo 1 (La Paz)';
 
-CREATE ROLE rol_analista       LOGIN PASSWORD :'app_password';            -- consultas nacionales
-CREATE ROLE rol_auditor        LOGIN PASSWORD :'app_password';            -- único con acceso a FC2
-CREATE ROLE rol_admin_catalogo LOGIN PASSWORD :'app_password';            -- mantiene el catálogo maestro
-CREATE ROLE replicador         LOGIN REPLICATION PASSWORD :'app_password'; -- suscripciones de los nodos 2-6
+CREATE ROLE rol_analista       LOGIN PASSWORD :'pass_analista';                -- consultas nacionales
+CREATE ROLE rol_auditor        LOGIN PASSWORD :'pass_auditor';                 -- único con acceso a FC2
+CREATE ROLE rol_admin_catalogo LOGIN PASSWORD :'pass_admin_catalogo';          -- mantiene el catálogo maestro
+CREATE ROLE replicador         LOGIN REPLICATION PASSWORD :'pass_replicador';  -- suscripciones de los nodos 2-6
 
 -- El catálogo solo se modifica aquí; los cajeros de La Paz también lo leen sin escribir.
 GRANT SELECT, INSERT, UPDATE, DELETE ON productos_catalogo  TO rol_admin_catalogo;

@@ -142,7 +142,7 @@ def configurar(informar=print):
             continue
         ejecutar_archivo(nodo, "replicas/post/10_suscripcion.sql", nodo_cod=nodo.cod,
                          lp_host=lp.host_interno, lp_port=lp.port_interno,
-                         app_password=ENV["APP_PASSWORD"])
+                         pass_replicador=ENV["PASS_REPLICADOR"])
         informar(f"  ✔ {nodo}: suscrito al catálogo de La Paz")
     if lp.local:
         direcciones = {}
@@ -151,7 +151,7 @@ def configurar(informar=print):
                 direcciones[f"h_{n.cod}"] = n.host_interno
                 direcciones[f"p_{n.cod}"] = n.port_interno
         ejecutar_archivo(lp, "nodo1_lp/post/10_transparencia_fdw.sql",
-                         app_password=ENV["APP_PASSWORD"], **direcciones)
+                         pass_fdw_lector=ENV["PASS_FDW_LECTOR"], **direcciones)
         ejecutar_archivo(lp, "nodo1_lp/post/20_vistas_globales.sql")
         informar(f"  ✔ {lp}: servidores remotos y esquema global «nacional» creados")
         try:

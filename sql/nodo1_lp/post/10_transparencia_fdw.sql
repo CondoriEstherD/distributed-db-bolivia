@@ -7,7 +7,7 @@
 -- Es la definición formal  VENTAS = FV1 ∪ FV2 ∪ ... ∪ FV6  hecha objeto del gestor,
 -- y permite al planificador descartar fragmentos (partition pruning).
 --
--- Variables psql: :h_sc :p_sc :h_cb :p_cb :h_tj :p_tj :h_or :p_or :h_be :p_be :app_password
+-- Variables psql: :h_sc :p_sc :h_cb :p_cb :h_tj :p_tj :h_or :p_or :h_be :p_be :pass_fdw_lector
 -- =============================================================================
 
 CREATE EXTENSION IF NOT EXISTS postgres_fdw;
@@ -41,11 +41,11 @@ CREATE SERVER srv_be FOREIGN DATA WRAPPER postgres_fdw OPTIONS (host :'h_be', po
     connect_timeout '3', tcp_user_timeout '5000', async_capable 'true', fetch_size '5000');
 
 -- Todas las lecturas remotas usan el rol de solo lectura fdw_lector.
-CREATE USER MAPPING FOR PUBLIC SERVER srv_sc OPTIONS (user 'fdw_lector', password :'app_password');
-CREATE USER MAPPING FOR PUBLIC SERVER srv_cb OPTIONS (user 'fdw_lector', password :'app_password');
-CREATE USER MAPPING FOR PUBLIC SERVER srv_tj OPTIONS (user 'fdw_lector', password :'app_password');
-CREATE USER MAPPING FOR PUBLIC SERVER srv_or OPTIONS (user 'fdw_lector', password :'app_password');
-CREATE USER MAPPING FOR PUBLIC SERVER srv_be OPTIONS (user 'fdw_lector', password :'app_password');
+CREATE USER MAPPING FOR PUBLIC SERVER srv_sc OPTIONS (user 'fdw_lector', password :'pass_fdw_lector');
+CREATE USER MAPPING FOR PUBLIC SERVER srv_cb OPTIONS (user 'fdw_lector', password :'pass_fdw_lector');
+CREATE USER MAPPING FOR PUBLIC SERVER srv_tj OPTIONS (user 'fdw_lector', password :'pass_fdw_lector');
+CREATE USER MAPPING FOR PUBLIC SERVER srv_or OPTIONS (user 'fdw_lector', password :'pass_fdw_lector');
+CREATE USER MAPPING FOR PUBLIC SERVER srv_be OPTIONS (user 'fdw_lector', password :'pass_fdw_lector');
 
 -- ---------------------------------------------------------------- esquema global
 CREATE SCHEMA nacional;

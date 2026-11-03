@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 import psycopg
 
 from sgbdd import operacion as op
-from sgbdd.config import MODO, NODOS, RAIZ, conectar, nodo_de_almacen
+from sgbdd.config import CONTRASENAS, MODO, NODOS, RAIZ, conectar, nodo_de_almacen
 from sgbdd.coordinador_2pc import TraspasoError, traspasar
 from sgbdd.recuperacion_2pc import recuperar
 
@@ -241,7 +241,15 @@ def p11():
         except psycopg.Error:
             continue
         raise AssertionError(f"{usuario}@{nodo.cod} pudo ejecutar: {sql}")
-    return "4/4 operaciones prohibidas fueron denegadas (catálogo en réplica, FC2, escritura remota)"
+    try:  # cada rol tiene su propia contraseña: la de otro rol no sirve
+        psycopg.connect(host=SC.host, port=SC.port, dbname=SC.bd, user="rol_cajero",
+                        password=CONTRASENAS["rol_analista"], connect_timeout=3).close()
+    except psycopg.OperationalError as e:
+        assert "password authentication failed" in str(e), e
+    else:
+        raise AssertionError("rol_cajero entró con la contraseña de rol_analista")
+    return ("5/5 accesos prohibidos fueron denegados (catálogo en réplica, FC2, escritura remota, "
+            "contraseña de otro rol)")
 
 
 def p12():

@@ -131,7 +131,7 @@ python gestion.py estado        # salud, volumen y replicación de cada nodo
 ```
 
 > [!IMPORTANT]
-> Cambie `PG_PASSWORD` y `APP_PASSWORD` en `.env` antes de cualquier despliegue en red.
+> Cambie `PG_PASSWORD` y las contraseñas `PASS_*` de cada rol en `.env` antes de cualquier despliegue en red.
 > El archivo `.env` está excluido del repositorio.
 
 ## 6. Demostración
@@ -195,7 +195,7 @@ P11; los casos de fallas se demuestran cortando el enlace real del equipo (ver s
 | P8 | Caída del destino durante el 2PC | Rollback: el origen queda intacto |
 | P9 | Caída del coordinador | La recuperación confirma o deshace según el registro |
 | P10 | 20 traspasos simultáneos sobre 100 unidades | 10 confirmados, stock nunca negativo, total nacional conservado |
-| P11 | Seguridad: matriz CRUD | 4/4 operaciones prohibidas rechazadas por el gestor |
+| P11 | Seguridad: matriz CRUD y contraseña por rol | 5/5 accesos prohibidos rechazados por el gestor |
 | P12 | Caída del nodo central | Los demás nodos siguen vendiendo |
 | P13 | Caída total de Beni (servidor apagado) | Los demás venden; al encenderlo recibe los cambios pendientes del catálogo |
 
@@ -260,7 +260,7 @@ equipo con ningún participante, como en una arquitectura real.
    `NODOS_LOCALES`. Ejemplo para E2:
    ```ini
    PG_PASSWORD=<la misma en todos>
-   APP_PASSWORD=<la misma en todos>
+   PASS_CAJERO=<la misma en todos>   # y así las 7 PASS_* de .env.example
    MODO=red
    NODOS_LOCALES=sc          # E1=lp · E3=cb · E4=tj · E5=or · E6=be · E7 vacío
    BIND_IP=0.0.0.0

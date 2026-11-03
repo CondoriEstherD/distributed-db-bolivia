@@ -23,6 +23,16 @@ ENV = _leer_env(RAIZ / ".env")
 MODO = ENV.get("MODO", "lab")  # lab | red
 LOCALES = {c.strip() for c in ENV.get("NODOS_LOCALES", "").split(",") if c.strip()}
 
+# Contraseña de cada rol con el que se conectan los programas Python.
+_VARIABLE_DEL_ROL = {"rol_cajero": "PASS_CAJERO", "fdw_lector": "PASS_FDW_LECTOR",
+                     "coordinador_2pc": "PASS_COORDINADOR", "rol_analista": "PASS_ANALISTA",
+                     "rol_auditor": "PASS_AUDITOR", "rol_admin_catalogo": "PASS_ADMIN_CATALOGO",
+                     "replicador": "PASS_REPLICADOR"}
+_faltan = [v for v in _VARIABLE_DEL_ROL.values() if v not in ENV]
+if _faltan:
+    raise SystemExit(f"Faltan en .env: {', '.join(_faltan)} (cópielas de .env.example)")
+CONTRASENAS = {rol: ENV[variable] for rol, variable in _VARIABLE_DEL_ROL.items()}
+
 
 @dataclass(frozen=True)
 class Nodo:
@@ -85,10 +95,9 @@ def nodo_de_almacen(id_almacen: int) -> Nodo:
 
 def conectar(nodo: Nodo, usuario: str, autocommit: bool = False) -> psycopg.Connection:
     """Conexión con detección rápida de fallas de red (≤ 3 s al conectar, ≤ 5 s en curso)."""
-    # ponytail: todos los roles de aplicación comparten APP_PASSWORD; usar una por rol en producción.
     return psycopg.connect(
         host=nodo.host, port=nodo.port, dbname=nodo.bd,
-        user=usuario, password=ENV["APP_PASSWORD"],
+        user=usuario, password=CONTRASENAS[usuario],
         connect_timeout=3, tcp_user_timeout=5000,
         keepalives=1, keepalives_idle=2, keepalives_interval=1, keepalives_count=2,
         options="-c statement_timeout=8000 -c lock_timeout=3000",

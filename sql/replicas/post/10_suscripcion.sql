@@ -3,11 +3,11 @@
 -- copy_data = false: la copia inicial ya existe (03_catalogo_semilla.sql); desde
 -- aquí solo se aplican los cambios publicados por La Paz.
 -- Si La Paz cambia de dirección (lab → red) se actualiza la conexión existente.
--- Variables psql: :nodo_cod, :lp_host, :lp_port, :app_password
+-- Variables psql: :nodo_cod, :lp_host, :lp_port, :pass_replicador
 -- =============================================================================
 
 SELECT format('host=%s port=%s dbname=bd_lp user=replicador password=%s connect_timeout=5',
-              :'lp_host', :'lp_port', :'app_password') AS conninfo,
+              :'lp_host', :'lp_port', :'pass_replicador') AS conninfo,
        'sub_catalogo_' || :'nodo_cod'                   AS subname \gset
 
 SELECT CASE
