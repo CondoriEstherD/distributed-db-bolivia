@@ -12,7 +12,7 @@ replicación lógica, transparencia de distribución y transacciones distribuida
 ![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-panel-FF4B4B?logo=streamlit&logoColor=white)
 ![Tailscale](https://img.shields.io/badge/Tailscale-red%20privada-242424?logo=tailscale&logoColor=white)
-![Pruebas](https://img.shields.io/badge/pruebas-14%2F14-success)
+[![Pruebas](https://github.com/CondoriEstherD/distributed-db-bolivia/actions/workflows/pruebas.yml/badge.svg)](https://github.com/CondoriEstherD/distributed-db-bolivia/actions/workflows/pruebas.yml)
 
 </div>
 
@@ -173,7 +173,11 @@ python gestion.py encender be    # vuelve y la réplica del catálogo se pone al
 ```powershell
 python -m pruebas.ejecutar_pruebas          # todos los casos
 python -m pruebas.ejecutar_pruebas P7 P10   # casos concretos
+python -m pruebas.test_panel                # el panel: 7 páginas, 8 consultas, fallas y recuperación
 ```
+
+GitHub Actions (`.github/workflows/pruebas.yml`) levanta los 6 nodos y corre ambas suites en cada *push* y
+*Pull Request* a `main`; si algo falla, guarda los registros de los nodos como *artifact*.
 
 En modo `lab` corren los 14 casos. En modo `red` (desde el equipo de consola) corren P0, P7, P9, P10 y
 P11; los casos de fallas se demuestran cortando el enlace real del equipo (ver sección 9).
@@ -334,7 +338,10 @@ equipo con ningún participante, como en una arquitectura real.
 │   ├── comun.py                utilidades compartidas
 │   └── app_pages/              una página por funcionalidad
 ├── .streamlit/config.toml      tema visual del panel
-├── pruebas/ejecutar_pruebas.py casos de prueba P0-P13
+├── pruebas/
+│   ├── ejecutar_pruebas.py     casos de prueba P0-P13
+│   └── test_panel.py           pruebas del panel (AppTest)
+├── .github/workflows/          integración continua
 └── docs/                       especificación técnica y plan de implementación
 ```
 

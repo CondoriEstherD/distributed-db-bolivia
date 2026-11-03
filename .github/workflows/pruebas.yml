@@ -1,0 +1,33 @@
+# Levanta los 6 nodos en modo lab y corre las 14 pruebas y las del panel en cada cambio a main.
+name: pruebas
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: cp .env.example .env
+      - run: python gestion.py levantar
+      - run: python gestion.py configurar
+      - run: python -m pruebas.ejecutar_pruebas
+      - run: python -m pruebas.test_panel
+      - name: Registros de los nodos
+        if: failure()
+        run: docker compose logs --no-color > registros_nodos.txt
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: registros-nodos
+          path: registros_nodos.txt
