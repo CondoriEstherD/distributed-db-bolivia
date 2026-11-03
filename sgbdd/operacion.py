@@ -161,6 +161,35 @@ def configurar(informar=print):
             informar(f"  ⚠ FC2 no cargado (¿todos los nodos en línea?): {e}. Repita `configurar` luego.")
 
 
+def respaldar(nodo):
+    """Copia lógica completa de la base del nodo en respaldos/<cod>_<AAAAMMDD-HHMM>.dump."""
+    _exigir_local(nodo)
+    carpeta = RAIZ / "respaldos"
+    carpeta.mkdir(exist_ok=True)
+    destino = carpeta / f"{nodo.cod}_{time.strftime('%Y%m%d-%H%M')}.dump"
+    docker("exec", nodo.contenedor, "pg_dump", "-U", "postgres", "-Fc", "-f", "/tmp/r.dump", nodo.bd)
+    docker("cp", f"{nodo.contenedor}:/tmp/r.dump", str(destino))
+    return destino
+
+
+def restaurar(nodo, archivo):
+    """Devuelve la base del nodo al estado del respaldo, en UNA transacción (todo o nada).
+
+    No se tocan la replicación ni el catálogo: la suscripción sigue sin perder su posición, y
+    recrear la publicación rompería a los suscriptores en PostgreSQL 16 («publication does not
+    exist»). El catálogo conserva su estado actual; en La Paz se corrige con UPDATE, que se replica.
+    """
+    _exigir_local(nodo)
+    docker("cp", str(archivo), f"{nodo.contenedor}:/tmp/r.dump")
+    excluir = ("SUBSCRIPTION", "PUBLICATION", " productos_catalogo ")
+    lista = docker("exec", nodo.contenedor, "pg_restore", "-l", "/tmp/r.dump").stdout
+    lista = "\n".join(l for l in lista.splitlines() if not any(x in l for x in excluir)) + "\n"
+    subprocess.run(["docker", "exec", "-i", nodo.contenedor, "sh", "-c", "cat > /tmp/r.lista"],
+                   input=lista, text=True, encoding="utf-8", check=True)
+    docker("exec", nodo.contenedor, "pg_restore", "-U", "postgres", "--clean", "--if-exists",
+           "--single-transaction", "-L", "/tmp/r.lista", "-d", nodo.bd, "/tmp/r.dump")
+
+
 def reiniciar():
     """Elimina contenedores y volúmenes: se pierden TODOS los datos."""
     docker("compose", "--profile", "admin", "down", "-v", "--remove-orphans")

@@ -213,6 +213,8 @@ P11; los casos de fallas se demuestran cortando el enlace real del equipo (ver s
 | Traspaso 2PC | `python -m sgbdd.coordinador_2pc --origen 201 --destino 601 --producto 15 --cantidad 50` |
 | Traspaso con pausa (para cortar un enlace a mitad) | añadir `--pausa 10` |
 | Resolver transacciones en duda | `python gestion.py recuperar` |
+| Respaldar un nodo (en `respaldos/`) | `python gestion.py respaldar be` |
+| Restaurar un nodo desde un respaldo | `python gestion.py restaurar be respaldos/be_20261103-1700.dump --si` |
 | pgAdmin (http://localhost:5050) | `python gestion.py levantar --admin` |
 | Borrar todo y empezar de cero | `python gestion.py reiniciar --si` |
 
@@ -355,6 +357,24 @@ equipo con ningún participante, como en una arquitectura real.
 | `configurar` avisa «FC2 no cargado» | Algún nodo estaba caído; repita `configurar` con todos en línea. |
 | Conexiones lentas en Windows | Use `127.0.0.1` en lugar de `localhost` en `HOST_*` (evita el intento por IPv6). |
 | Quedan filas bloqueadas tras un fallo del coordinador | `python gestion.py recuperar` (o `--edad-minima 0`). |
+| Restauré un nodo y el catálogo no volvió al estado del respaldo | Es intencional: `restaurar` no toca el catálogo ni la replicación (recrear la publicación rompe a los suscriptores en PostgreSQL 16). Corrija precios en La Paz con `UPDATE`: se replica. |
+
+### Trasladar un nodo a otro equipo (modo red)
+
+Ejemplo con Beni:
+
+1. En el equipo actual, `python gestion.py respaldar be`. Copie el `.dump` al equipo nuevo.
+2. En el equipo nuevo, agregue `be` a `NODOS_LOCALES`. En los 7 `.env`, cambie `HOST_BE` por la IP de
+   Tailscale del equipo nuevo.
+3. En el equipo nuevo, ejecute `python gestion.py levantar` y luego
+   `python gestion.py restaurar be <archivo> --si`.
+4. Ejecute `python gestion.py configurar` primero en el equipo nuevo y después en E1. Esto vuelve a
+   suscribir a Beni y apunta a la nueva dirección los servidores remotos de La Paz.
+5. En el equipo anterior, ejecute `docker compose stop nodo6_be`.
+6. El catálogo de Beni parte de la carga inicial. Para que reciba los precios que La Paz cambió antes
+   del traslado, ejecute en E1:
+   `python gestion.py sql lp "UPDATE productos_catalogo SET precio_unitario = precio_unitario"`.
+   Ese `UPDATE` vuelve a enviar el catálogo completo a todos los nodos.
 
 ## 12. Documentación
 

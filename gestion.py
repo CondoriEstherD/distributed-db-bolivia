@@ -10,6 +10,8 @@
   python gestion.py vender be            venta de demostración en la consola local del nodo
   python gestion.py sql lp "SELECT 1"    SQL en la consola local de un nodo (superusuario)
   python gestion.py recuperar            resuelve transacciones 2PC en duda
+  python gestion.py respaldar be         copia la base del nodo en respaldos/
+  python gestion.py restaurar be <archivo> --si   vuelve el nodo al estado del respaldo
   python gestion.py reiniciar --si       BORRA contenedores y datos
 """
 import argparse
@@ -47,9 +49,11 @@ def main():
     s = sub.add_parser("levantar"); s.add_argument("--admin", action="store_true", help="incluye pgAdmin")
     sub.add_parser("configurar")
     sub.add_parser("estado")
-    for nombre in ("aislar", "reconectar", "apagar", "encender", "vender"):
+    for nombre in ("aislar", "reconectar", "apagar", "encender", "vender", "respaldar"):
         sub.add_parser(nombre).add_argument("nodo", type=_nodo)
     s = sub.add_parser("sql"); s.add_argument("nodo", type=_nodo); s.add_argument("consulta")
+    s = sub.add_parser("restaurar"); s.add_argument("nodo", type=_nodo); s.add_argument("archivo", type=Path)
+    s.add_argument("--si", action="store_true", help="confirma que se pierden los cambios posteriores")
     s = sub.add_parser("recuperar"); s.add_argument("--edad-minima", type=float, default=30)
     s = sub.add_parser("reiniciar"); s.add_argument("--si", action="store_true", help="confirma el borrado")
     a = p.parse_args()
@@ -76,6 +80,14 @@ def main():
         elif a.comando == "sql":
             for fila in op.consola(a.nodo, a.consulta):
                 print(" | ".join(fila))
+        elif a.comando == "respaldar":
+            print(f"Respaldo de {a.nodo}: {op.respaldar(a.nodo)}")
+        elif a.comando == "restaurar":
+            if not a.archivo.is_file():
+                sys.exit(f"No existe el archivo {a.archivo}")
+            if not a.si:
+                sys.exit(f"Esto reemplaza los datos de {a.nodo} por los del respaldo. Repita con --si para confirmar.")
+            op.restaurar(a.nodo, a.archivo); print(f"{a.nodo} restaurado desde {a.archivo.name}")
         elif a.comando == "recuperar":
             recuperar(a.edad_minima)
         elif a.comando == "reiniciar":
