@@ -52,6 +52,21 @@ with st.container(border=True):
     if not posible:
         st.caption(":material/info: Este nodo no está en este equipo: provoque la falla en su equipo.")
 
+if cod == "be" and nodo.local:
+    with st.container(border=True):
+        actual = op.latencia_actual(nodo)
+        with st.container(horizontal=True, vertical_alignment="bottom"):
+            ms = st.segmented_control("Latencia del enlace (ms)", [0, 100, 300, 800], required=True,
+                                      default=actual if actual in (0, 100, 300, 800) else 0)
+            aplicar = st.button("Aplicar latencia", icon=":material/speed:",
+                                disabled=ms == actual or estado[cod] != "EN LÍNEA")
+        st.caption(f"Actual: **{actual} ms**. Simula un enlace lento con `tc netem` (± 20 % y 1 % de pérdida). "
+                   "Compare el tiempo de la consulta nacional o de un traspaso hacia Beni.")
+    if aplicar:
+        with st.spinner("Aplicando (la primera vez instala tc: ~30 s)…"):
+            op.latencia(nodo, ms)
+        st.rerun()
+
 if provocar:
     with st.spinner("Provocando la falla…"):
         if tipo == CORTAR:

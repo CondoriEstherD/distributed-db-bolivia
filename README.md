@@ -208,6 +208,8 @@ P11; los casos de fallas se demuestran cortando el enlace real del equipo (ver s
 | Restablecer el enlace | `python gestion.py reconectar be` |
 | Apagar el servidor de un nodo (caída total) | `python gestion.py apagar be` |
 | Volver a encender el nodo | `python gestion.py encender be` |
+| Simular un enlace lento en Beni (0 lo quita) | `python gestion.py latencia be 300` |
+| Medir el efecto de la latencia | `python -m pruebas.medir_latencia` |
 | Venta en la consola local de un nodo | `python gestion.py vender be` |
 | SQL en un nodo | `python gestion.py sql lp "SELECT * FROM nacional.resumen_nacional_disponible()"` |
 | Traspaso 2PC | `python -m sgbdd.coordinador_2pc --origen 201 --destino 601 --producto 15 --cantidad 50` |
@@ -380,6 +382,7 @@ Ejemplo con Beni:
 
 - [Especificación técnica (APA 7)](docs/Especificacion_Tecnica_SGBDD_BoliviaDistribucion.docx)
 - [Plan de implementación](docs/PLAN_IMPLEMENTACION.md)
+- [Informe de pruebas](docs/INFORME_PRUEBAS.md)
 
 ### Referencias
 

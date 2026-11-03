@@ -7,6 +7,7 @@
   python gestion.py reconectar be        restablece el enlace
   python gestion.py apagar be            caída total: detiene el servidor del nodo
   python gestion.py encender be          vuelve a encender el nodo
+  python gestion.py latencia be 300      retardo de 300 ms en el enlace de Beni (0 lo quita)
   python gestion.py vender be            venta de demostración en la consola local del nodo
   python gestion.py sql lp "SELECT 1"    SQL en la consola local de un nodo (superusuario)
   python gestion.py recuperar            resuelve transacciones 2PC en duda
@@ -51,6 +52,7 @@ def main():
     sub.add_parser("estado")
     for nombre in ("aislar", "reconectar", "apagar", "encender", "vender", "respaldar"):
         sub.add_parser(nombre).add_argument("nodo", type=_nodo)
+    s = sub.add_parser("latencia"); s.add_argument("nodo", type=_nodo); s.add_argument("ms", type=int)
     s = sub.add_parser("sql"); s.add_argument("nodo", type=_nodo); s.add_argument("consulta")
     s = sub.add_parser("restaurar"); s.add_argument("nodo", type=_nodo); s.add_argument("archivo", type=Path)
     s.add_argument("--si", action="store_true", help="confirma que se pierden los cambios posteriores")
@@ -75,6 +77,9 @@ def main():
             op.apagar(a.nodo); print(f"{a.nodo} APAGADO (servidor detenido)")
         elif a.comando == "encender":
             op.encender(a.nodo); print(f"{a.nodo} encendido; la réplica del catálogo se sincroniza sola")
+        elif a.comando == "latencia":
+            op.latencia(a.nodo, a.ms)
+            print(f"{a.nodo}: latencia de {a.ms} ms" if a.ms else f"{a.nodo}: latencia eliminada")
         elif a.comando == "vender":
             print(op.vender_local(a.nodo))
         elif a.comando == "sql":

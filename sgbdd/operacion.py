@@ -2,6 +2,7 @@
 
 Compartido por gestion.py (consola), el panel Streamlit y las pruebas.
 """
+import re
 import subprocess
 import time
 
@@ -102,6 +103,33 @@ def reconectar(nodo):
     _exigir_lab(nodo)
     if aislado(nodo):
         docker("network", "connect", RED_WAN, nodo.contenedor)
+
+
+def latencia(nodo, ms):
+    """Retardo del enlace del nodo con tc/netem: `ms` ± ms/5 y 1 % de pérdida; 0 lo quita.
+
+    Requiere `cap_add: [NET_ADMIN]` en el servicio (solo Beni lo tiene). Al aislar y reconectar
+    el nodo, Docker crea una interfaz nueva y la latencia desaparece.
+    """
+    _exigir_local(nodo)
+    c = nodo.contenedor
+    if "NET_ADMIN" not in docker("inspect", "-f", "{{.HostConfig.CapAdd}}", c).stdout:
+        raise RuntimeError(f"{nodo} no tiene cap_add: [NET_ADMIN] en docker-compose.yml (solo Beni)")
+    if docker("exec", c, "sh", "-c", "command -v tc", check=False).returncode != 0:
+        docker("exec", "-u", "root", c, "sh", "-c",
+               "apt-get update -qq && apt-get install -y -qq iproute2 >/dev/null")
+    if ms > 0:
+        docker("exec", "-u", "root", c, "tc", "qdisc", "replace", "dev", "eth0", "root", "netem",
+               "delay", f"{ms}ms", f"{ms // 5}ms", "loss", "1%")
+    else:  # sin latencia previa, `tc qdisc del` falla: se ignora
+        docker("exec", "-u", "root", c, "tc", "qdisc", "del", "dev", "eth0", "root", check=False)
+
+
+def latencia_actual(nodo) -> int:
+    """Retardo configurado en ms (0 si no hay o no se puede leer)."""
+    r = docker("exec", nodo.contenedor, "sh", "-c", "tc qdisc show dev eth0", check=False)
+    m = re.search(r"delay (\d+)ms", r.stdout)
+    return int(m.group(1)) if m else 0
 
 
 # ------------------------------------------------------------------ despliegue

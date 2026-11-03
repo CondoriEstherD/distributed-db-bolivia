@@ -83,6 +83,17 @@ def fallas_apagar():
     return fallas("Apagar el servidor", {"nacional", "venta_afectado"})
 
 
+def latencia():
+    """Simulación de fallas: latencia del enlace de Beni"""
+    at = abrir("fallas")
+    for ms in (300, 0):
+        control = next(s for s in at.segmented_control if s.label == "Latencia del enlace (ms)")
+        control.set_value(ms).run()
+        pulsar(at, "Aplicar latencia")
+        assert op.latencia_actual(NODOS["be"]) == ms, f"no quedó en {ms} ms"
+    return "300 ms aplicados y retirados desde el panel"
+
+
 def recuperacion():
     """Recuperación 2PC tras las dos caídas del coordinador"""
     at = abrir("recuperacion")
@@ -97,7 +108,7 @@ def recuperacion():
     return "2 caídas del coordinador resueltas; 0 transacciones en duda"
 
 
-PRUEBAS = (carga, consultas, fallas_cortar, fallas_apagar, recuperacion)
+PRUEBAS = (carga, consultas, fallas_cortar, fallas_apagar, latencia, recuperacion)
 
 
 def main():

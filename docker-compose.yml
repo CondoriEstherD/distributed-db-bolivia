@@ -121,6 +121,7 @@ services:
     <<: *nodo
     container_name: nodo6_be
     hostname: nodo6_be
+    cap_add: [NET_ADMIN]   # `gestion.py latencia be <ms>`: retardo del enlace con tc/netem
     environment:
       POSTGRES_PASSWORD: ${PG_PASSWORD}
       POSTGRES_DB: bd_be
