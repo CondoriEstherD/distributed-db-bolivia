@@ -2,8 +2,8 @@
 
 Modo lab: los 6 nodos en este equipo, levantados y configurados; corren los 13 casos.
 Modo red (p. ej. desde el equipo de consola): corren P0, P7, P9, P10 y P11, que no necesitan
-cortar enlaces. Los casos de fallas (P1-P6, P8, P12, P13) se demuestran a mano con `tailscale down`
-en el equipo del nodo.
+cortar enlaces, y P13 en el equipo de Beni (E6), que puede apagar su propio servidor. Los demás casos
+de fallas (P1-P6, P8, P12) se demuestran a mano con `tailscale down` en el equipo del nodo.
 Uso:  python -m pruebas.ejecutar_pruebas            (todos)
       python -m pruebas.ejecutar_pruebas P7 P8      (algunos)
 Cada prueba deja los nodos encendidos y reconectados al terminar, pase o falle.
@@ -279,7 +279,8 @@ CON_AISLAMIENTO = {"P1", "P2", "P3", "P4", "P5", "P6", "P8", "P12", "P13"}
 
 
 def main():
-    manuales = CON_AISLAMIENTO if MODO == "red" else set()
+    # P13 solo apaga Beni: en modo red basta con que Beni esté en este equipo.
+    manuales = (CON_AISLAMIENTO - ({"P13"} if BE.local else set())) if MODO == "red" else set()
     elegidas = [a.upper() for a in sys.argv[1:]] or [c for c in PRUEBAS if c not in manuales]
     resultados = []
     for clave in elegidas:
@@ -295,10 +296,10 @@ def main():
         except Exception as e:  # una prueba fallida no detiene las demás
             detalle, ok = f"{e.__class__.__name__}: {e}", False
         finally:
-            if MODO == "lab":
-                for nodo in NODOS.values():
-                    if op.apagado(nodo):
-                        op.encender(nodo, informar=silencio)
+            for nodo in op.locales():
+                if op.apagado(nodo):
+                    op.encender(nodo, informar=silencio)
+                if MODO == "lab":
                     op.reconectar(nodo)
         resultados.append((clave, ok))
         print(f"  {'✔ PASA' if ok else '✖ FALLA'} ({time.time() - inicio:.1f} s) — {detalle}", flush=True)

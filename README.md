@@ -282,14 +282,13 @@ equipo con ningún participante, como en una arquitectura real.
    New-NetFirewallRule -DisplayName "SGBDD nodo" -Direction Inbound -Protocol TCP -LocalPort 15432 -Action Allow
    ```
 5. **Levantar (E1 a E6).** `python gestion.py levantar` en cada equipo. Cada nodo carga solo sus datos.
-6. **Conectividad.** Desde E7, comprobar los 6 puertos:
-   ```powershell
-   Test-NetConnection 100.64.0.2 -Port 15432
-   ```
-   Desde E1, comprobar que el **contenedor** de La Paz llega a los demás nodos (lo usa `postgres_fdw`):
-   ```powershell
-   docker exec nodo1_lp pg_isready -h 100.64.0.2 -p 15432
-   ```
+6. **Conectividad.** Ejecutar `python gestion.py verificar` en los 7 equipos. El comando:
+   - inicia sesión en los 6 nodos desde ese equipo;
+   - en E1 a E6, comprueba además que el **contenedor** del nodo llega a los otros 5, que es la ruta que
+     usan `postgres_fdw` y la replicación.
+
+   Cada ✖ indica la causa probable: una IP o un puerto mal escrito en `.env`, el firewall o un nodo sin
+   levantar. No continúe hasta que los 7 equipos muestren «Conectividad completa».
 7. **Configurar, en este orden.** Primero E2 a E6 (`python gestion.py configurar`: suscripción al
    catálogo) y **al final E1** (crea el esquema `nacional` y carga FC2 leyendo los 6 nodos; si algún nodo
    está apagado, avisa y basta repetirlo).

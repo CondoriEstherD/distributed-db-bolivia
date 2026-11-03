@@ -223,6 +223,36 @@ def reiniciar():
     docker("compose", "--profile", "admin", "down", "-v", "--remove-orphans")
 
 
+def verificar_red():
+    """Conectividad previa a `configurar` (despliegue en red). Devuelve (origen, destino, ok, detalle).
+
+    1. Desde este equipo (Python, panel, coordinador): login real en cada nodo.
+    2. Desde el CONTENEDOR de cada nodo local hacia los demás: la ruta que usan postgres_fdw
+       (La Paz → todos) y la replicación (todos → La Paz). Un firewall o una IP mal escrita
+       en .env aparecen aquí.
+    """
+    filas = []
+    for n in NODOS.values():
+        try:
+            with conectar(n, "fdw_lector", autocommit=True) as c:
+                c.execute("SELECT 1")
+            filas.append(("este equipo", str(n), True, f"{n.host}:{n.port}"))
+        except psycopg.Error as e:
+            filas.append(("este equipo", str(n), False, f"{n.host}:{n.port} · {str(e).strip().splitlines()[0]}"))
+    for origen in locales():
+        if apagado(origen):
+            filas.append((origen.contenedor, "—", False, "contenedor detenido"))
+            continue
+        for n in NODOS.values():
+            if n is origen:
+                continue
+            r = docker("exec", origen.contenedor, "pg_isready", "-t", "3", "-h", n.host_interno,
+                       "-p", str(n.port_interno), check=False)
+            filas.append((origen.contenedor, str(n), r.returncode == 0,
+                          f"{n.host_interno}:{n.port_interno} · {r.stdout.strip().split(' - ')[-1]}"))
+    return filas
+
+
 # ------------------------------------------------------------------ estado
 def estado_nodos():
     filas = []

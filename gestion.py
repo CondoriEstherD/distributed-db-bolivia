@@ -3,6 +3,7 @@
   python gestion.py levantar [--admin]   levanta los nodos de NODOS_LOCALES (y pgAdmin)
   python gestion.py configurar           suscripciones al catálogo + esquema global en La Paz
   python gestion.py estado               salud, volumen y replicación de los 6 nodos
+  python gestion.py verificar            conectividad entre equipos y contenedores (antes de configurar)
   python gestion.py aislar be            corta el enlace WAN del nodo (modo lab)
   python gestion.py reconectar be        restablece el enlace
   python gestion.py apagar be            caída total: detiene el servidor del nodo
@@ -50,6 +51,7 @@ def main():
     s = sub.add_parser("levantar"); s.add_argument("--admin", action="store_true", help="incluye pgAdmin")
     sub.add_parser("configurar")
     sub.add_parser("estado")
+    sub.add_parser("verificar")
     for nombre in ("aislar", "reconectar", "apagar", "encender", "vender", "respaldar"):
         sub.add_parser(nombre).add_argument("nodo", type=_nodo)
     s = sub.add_parser("latencia"); s.add_argument("nodo", type=_nodo); s.add_argument("ms", type=int)
@@ -69,6 +71,14 @@ def main():
             op.configurar()
         elif a.comando == "estado":
             cmd_estado(a)
+        elif a.comando == "verificar":
+            filas = op.verificar_red()
+            for origen, destino, ok, detalle in filas:
+                print(f"{'✔' if ok else '✖'} {origen:<14} → {destino:<22} {detalle}")
+            fallas = sum(not ok for *_, ok, _ in filas)
+            if fallas:
+                sys.exit(f"{fallas} conexiones fallan: revise IP/puertos en .env, firewall y que el nodo esté levantado")
+            print("Conectividad completa: puede ejecutar `configurar`.")
         elif a.comando == "aislar":
             op.aislar(a.nodo); print(f"{a.nodo} aislado de la WAN (sigue operando localmente)")
         elif a.comando == "reconectar":

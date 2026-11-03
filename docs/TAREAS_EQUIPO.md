@@ -57,9 +57,7 @@ Cada integrante tiene una tarea ligada al nodo que administra en la defensa (rol
 2. **`.env` común:** prepararlo siguiendo la sección 9 del README. Debe ser idéntico en los 7 equipos salvo `NODOS_LOCALES` (vacío en E7). Si la tarea 5 ya está integrada, incluir las contraseñas por rol.
 3. **Firewall:** en cada equipo de nodo, abrir **solo su puerto** (E1 → 15431 … E6 → 15436).
 4. **Suspensión:** desactivarla en los equipos de nodo. En Windows, Configuración → Sistema → Energía → "Nunca".
-5. **Verificar la conectividad antes de configurar:**
-   - Desde E7, para cada nodo: `Test-NetConnection <IP> -Port <puerto>`.
-   - Desde E1, para cada nodo: `docker exec nodo1_lp pg_isready -h <IP> -p <puerto>`. Esto comprueba que el **contenedor** de La Paz llega a los demás, que es lo que necesita `postgres_fdw`.
+5. **Verificar la conectividad antes de configurar:** ejecutar `python gestion.py verificar` en los 7 equipos, después de `levantar` en E1–E6. El comando inicia sesión en los 6 nodos y, en los equipos de nodo, comprueba que el **contenedor** llega a los otros 5 (la ruta de `postgres_fdw` y de la replicación). Ensayado el 03/11/2026 en una sola laptop con `MODO=red` y los nodos por IP: 36/36 conexiones, `configurar`, P0, P7, P9, P10, P11 y P13 pasan.
 6. **Levantar y configurar en orden:**
    1. `python gestion.py levantar` en E1–E6.
    2. `python gestion.py configurar` en E2–E6.
