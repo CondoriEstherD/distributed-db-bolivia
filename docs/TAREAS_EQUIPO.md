@@ -153,7 +153,7 @@ Cada integrante tiene una tarea ligada al nodo que administra en la defensa (rol
    - **Creación de roles:** cada rol de `01_roles.sql` y `10_nodo_central.sql` usa su variable.
    - **Consultas remotas:** el *user mapping* de `10_transparencia_fdw.sql` usa `PASS_FDW_LECTOR`. Pasar la variable desde `configurar()`.
    - **Replicación:** la suscripción de `10_suscripcion.sql` debe conectarse como **`replicador`** con `PASS_REPLICADOR`. Verificar que `replicador` tiene `SELECT` en `productos_catalogo`; la línea ya existe en `10_nodo_central.sql`.
-4. **Conexión desde Python:** en `config.py`, crear el diccionario `CONTRASENAS = {"rol_cajero": ENV["PASS_CAJERO"], …}` y usarlo en `conectar()`. Eliminar el comentario `ponytail:`.
+4. **Conexión desde Python:** en `config.py`, crear el diccionario `CONTRASENAS = {"rol_cajero": ENV["PASS_CAJERO"], …}` y usarlo en `conectar()`. Eliminar el comentario que advertía de la contraseña compartida.
 5. **Probar el rechazo:** agregar a P11 un caso que conecte como `rol_cajero` con la contraseña de `rol_analista` y espere un error de autenticación.
 
 **Terminado cuando:**
