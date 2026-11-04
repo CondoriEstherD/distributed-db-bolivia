@@ -1,0 +1,36 @@
+-- C1 · Ventas totales por departamento (agregación calculada en cada nodo)  (rol rol_analista, Nodo 1 La Paz)
+SELECT departamento_id, count(*) AS ventas, sum(total_bs) AS total_bs
+FROM ventas_nacionales
+GROUP BY departamento_id
+ORDER BY total_bs DESC;
+
+-- EXPLAIN (VERBOSE, COSTS OFF)
+Sort
+  Output: ventas_nacionales.departamento_id, (count(*)), (sum(ventas_nacionales.total_bs))
+  Sort Key: (sum(ventas_nacionales.total_bs)) DESC
+  ->  Append
+        ->  Async Foreign Scan
+              Output: ventas_nacionales.departamento_id, (count(*)), (sum(ventas_nacionales.total_bs))
+              Relations: Aggregate on (nacional.fv6_be ventas_nacionales)
+              Remote SQL: SELECT departamento_id, count(*), sum(total_bs) FROM public.ventas GROUP BY 1
+        ->  Async Foreign Scan
+              Output: ventas_nacionales_1.departamento_id, (count(*)), (sum(ventas_nacionales_1.total_bs))
+              Relations: Aggregate on (nacional.fv3_cb ventas_nacionales_1)
+              Remote SQL: SELECT departamento_id, count(*), sum(total_bs) FROM public.ventas GROUP BY 1
+        ->  Async Foreign Scan
+              Output: ventas_nacionales_2.departamento_id, (count(*)), (sum(ventas_nacionales_2.total_bs))
+              Relations: Aggregate on (nacional.fv4_tj ventas_nacionales_2)
+              Remote SQL: SELECT departamento_id, count(*), sum(total_bs) FROM public.ventas GROUP BY 1
+        ->  HashAggregate
+              Output: ventas_nacionales_3.departamento_id, count(*), sum(ventas_nacionales_3.total_bs)
+              Group Key: ventas_nacionales_3.departamento_id
+              ->  Seq Scan on public.ventas ventas_nacionales_3
+                    Output: ventas_nacionales_3.departamento_id, ventas_nacionales_3.total_bs
+        ->  Async Foreign Scan
+              Output: ventas_nacionales_4.departamento_id, (count(*)), (sum(ventas_nacionales_4.total_bs))
+              Relations: Aggregate on (nacional.fv5_or ventas_nacionales_4)
+              Remote SQL: SELECT departamento_id, count(*), sum(total_bs) FROM public.ventas GROUP BY 1
+        ->  Async Foreign Scan
+              Output: ventas_nacionales_5.departamento_id, (count(*)), (sum(ventas_nacionales_5.total_bs))
+              Relations: Aggregate on (nacional.fv2_sc ventas_nacionales_5)
+              Remote SQL: SELECT departamento_id, count(*), sum(total_bs) FROM public.ventas GROUP BY 1

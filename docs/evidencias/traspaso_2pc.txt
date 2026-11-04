@@ -1,0 +1,26 @@
+== 1. Traspaso exitoso SC(201) -> BE(601), producto 15, 50 u ==
+Traspaso trp-20261103222442-5b03c9: 50 u. del producto 15, almacén 201 (Santa Cruz) → 601 (Beni)
+FASE 1 · Nodo 2 · Santa Cruz: conectando…
+FASE 1 · Nodo 2 · Santa Cruz: PREPARE TRANSACTION 'trp-20261103222442-5b03c9-sc' → voto SÍ
+FASE 1 · Nodo 6 · Beni: conectando…
+FASE 1 · Nodo 6 · Beni: PREPARE TRANSACTION 'trp-20261103222442-5b03c9-be' → voto SÍ
+DECISIÓN: COMMIT registrado en traspasos_log (Nodo 3)
+FASE 2 · Nodo 2 · Santa Cruz: COMMIT PREPARED 'trp-20261103222442-5b03c9-sc'
+FASE 2 · Nodo 6 · Beni: COMMIT PREPARED 'trp-20261103222442-5b03c9-be'
+✔ Traspaso trp-20261103222442-5b03c9 confirmado en ambos nodos
+código de salida: 0
+
+== 2. Mismo traspaso con pausa de 10 s; Beni se aísla a los 3 s ==
+Traspaso abortado: connection timeout expired
+Traspaso trp-20261103222444-f526da: 50 u. del producto 15, almacén 201 (Santa Cruz) → 601 (Beni)
+FASE 1 · Nodo 2 · Santa Cruz: conectando…
+FASE 1 · Nodo 2 · Santa Cruz: PREPARE TRANSACTION 'trp-20261103222444-f526da-sc' → voto SÍ
+  … pausa de 10 s (momento para cortar un enlace)
+FASE 1 · Nodo 6 · Beni: conectando…
+DECISIÓN: ABORTAR — connection timeout expired
+FASE 2 · Nodo 2 · Santa Cruz: ROLLBACK PREPARED 'trp-20261103222444-f526da-sc'
+código de salida: 1
+Nodo 6 · Beni reconectado a la WAN
+
+== Transacciones preparadas tras el aborto ==
+0

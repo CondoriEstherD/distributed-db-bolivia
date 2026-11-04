@@ -1,0 +1,11 @@
+-- C6 · Un solo departamento: el planificador consulta un único fragmento  (rol rol_analista, Nodo 1 La Paz)
+SELECT departamento_id, count(*) AS ventas, sum(total_bs) AS total_bs
+FROM ventas_nacionales
+WHERE departamento_id = 'SC'
+GROUP BY departamento_id;
+
+-- EXPLAIN (VERBOSE, COSTS OFF)
+Foreign Scan
+  Output: ventas_nacionales.departamento_id, (count(*)), (sum(ventas_nacionales.total_bs))
+  Relations: Aggregate on (nacional.fv2_sc ventas_nacionales)
+  Remote SQL: SELECT departamento_id, count(*), sum(total_bs) FROM public.ventas WHERE ((departamento_id = 'SC')) GROUP BY 1

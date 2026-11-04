@@ -1,0 +1,27 @@
+== Caída del coordinador en «preparado» ==
+código de salida: 3
+-- transacciones en duda (SC y BE):
+trp-20261103222547-21cc81-sc
+trp-20261103222547-21cc81-be
+-- python gestion.py recuperar --edad-minima 0:
+Nodo 2 · Santa Cruz: ROLLBACK PREPARED 'trp-20261103222547-21cc81-sc' (estado en log: PREPARADO)
+Nodo 6 · Beni: ROLLBACK PREPARED 'trp-20261103222547-21cc81-be' (estado en log: PREPARADO)
+-- en duda después: SC 0 · BE 0
+
+== Caída del coordinador en «decision» ==
+código de salida: 4
+-- transacciones en duda (SC y BE):
+trp-20261103222559-786650-sc
+trp-20261103222559-786650-be
+-- python gestion.py recuperar --edad-minima 0:
+Nodo 2 · Santa Cruz: COMMIT PREPARED 'trp-20261103222559-786650-sc' (estado en log: COMMIT)
+Nodo 6 · Beni: COMMIT PREPARED 'trp-20261103222559-786650-be' (estado en log: COMMIT)
+-- en duda después: SC 0 · BE 0
+
+== Registro de decisiones (Nodo 3 Cochabamba) ==
+trp-20261103222559-786650 | COMMIT | 201 | 601 | 11 | 7
+trp-20261103222547-21cc81 | ABORTADO | 201 | 601 | 11 | 7
+trp-20261103222517-6bffb8 | ABORTADO | 201 | 601 | 11 | 7
+trp-20261103222509-0dedef | ABORTADO | 201 | 601 | 11 | 7
+trp-20261103222444-f526da | ABORTADO | 201 | 601 | 15 | 50
+trp-20261103222442-5b03c9 | COMMIT | 201 | 601 | 15 | 50

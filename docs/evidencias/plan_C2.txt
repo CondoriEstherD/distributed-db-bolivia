@@ -1,0 +1,56 @@
+-- C2 · Clientes con crédito (FC2, La Paz) y sus compras en Tarija y Chuquisaca (Nodo 4)  (rol rol_auditor, Nodo 1 La Paz)
+SELECT c.razon_social, c.nit_ci, f.limite_credito, f.saldo_pendiente, f.estado_credito,
+       count(*) AS compras, sum(v.total_bs) AS total_bs
+FROM ventas_nacionales v
+JOIN clientes_nacionales c USING (id_cliente)
+JOIN clientes_financiero f USING (id_cliente)
+WHERE v.departamento_id IN ('TJ', 'CH')
+GROUP BY 1, 2, 3, 4, 5
+ORDER BY total_bs DESC
+LIMIT 15;
+
+-- EXPLAIN (VERBOSE, COSTS OFF)
+Limit
+  Output: c.razon_social, c.nit_ci, f.limite_credito, f.saldo_pendiente, f.estado_credito, (count(*)), (sum(v.total_bs))
+  ->  Sort
+        Output: c.razon_social, c.nit_ci, f.limite_credito, f.saldo_pendiente, f.estado_credito, (count(*)), (sum(v.total_bs))
+        Sort Key: (sum(v.total_bs)) DESC
+        ->  GroupAggregate
+              Output: c.razon_social, c.nit_ci, f.limite_credito, f.saldo_pendiente, f.estado_credito, count(*), sum(v.total_bs)
+              Group Key: c.razon_social, c.nit_ci, f.limite_credito, f.saldo_pendiente, f.estado_credito
+              ->  Sort
+                    Output: c.razon_social, c.nit_ci, f.limite_credito, f.saldo_pendiente, f.estado_credito, v.total_bs
+                    Sort Key: c.razon_social, c.nit_ci, f.limite_credito, f.saldo_pendiente, f.estado_credito
+                    ->  Hash Join
+                          Output: c.razon_social, c.nit_ci, f.limite_credito, f.saldo_pendiente, f.estado_credito, v.total_bs
+                          Hash Cond: (c.id_cliente = v.id_cliente)
+                          ->  Append
+                                ->  Async Foreign Scan on nacional.fc1_be c_1
+                                      Output: c_1.razon_social, c_1.nit_ci, c_1.id_cliente
+                                      Remote SQL: SELECT id_cliente, nit_ci, razon_social FROM public.clientes_datos_generales
+                                ->  Async Foreign Scan on nacional.fc1_cb c_2
+                                      Output: c_2.razon_social, c_2.nit_ci, c_2.id_cliente
+                                      Remote SQL: SELECT id_cliente, nit_ci, razon_social FROM public.clientes_datos_generales
+                                ->  Async Foreign Scan on nacional.fc1_tj c_3
+                                      Output: c_3.razon_social, c_3.nit_ci, c_3.id_cliente
+                                      Remote SQL: SELECT id_cliente, nit_ci, razon_social FROM public.clientes_datos_generales
+                                ->  Seq Scan on public.clientes_datos_generales c_4
+                                      Output: c_4.razon_social, c_4.nit_ci, c_4.id_cliente
+                                ->  Async Foreign Scan on nacional.fc1_or c_5
+                                      Output: c_5.razon_social, c_5.nit_ci, c_5.id_cliente
+                                      Remote SQL: SELECT id_cliente, nit_ci, razon_social FROM public.clientes_datos_generales
+                                ->  Async Foreign Scan on nacional.fc1_sc c_6
+                                      Output: c_6.razon_social, c_6.nit_ci, c_6.id_cliente
+                                      Remote SQL: SELECT id_cliente, nit_ci, razon_social FROM public.clientes_datos_generales
+                          ->  Hash
+                                Output: v.total_bs, v.id_cliente, f.limite_credito, f.saldo_pendiente, f.estado_credito, f.id_cliente
+                                ->  Hash Join
+                                      Output: v.total_bs, v.id_cliente, f.limite_credito, f.saldo_pendiente, f.estado_credito, f.id_cliente
+                                      Hash Cond: (f.id_cliente = v.id_cliente)
+                                      ->  Seq Scan on public.clientes_financiero f
+                                            Output: f.id_cliente, f.limite_credito, f.saldo_pendiente, f.calificacion_riesgo, f.estado_credito
+                                      ->  Hash
+                                            Output: v.total_bs, v.id_cliente
+                                            ->  Foreign Scan on nacional.fv4_tj v
+                                                  Output: v.total_bs, v.id_cliente
+                                                  Remote SQL: SELECT id_cliente, total_bs FROM public.ventas WHERE ((departamento_id = ANY ('{TJ,CH}'::bpchar[])))

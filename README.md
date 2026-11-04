@@ -186,11 +186,11 @@ P11; los casos de fallas se demuestran cortando el enlace real del equipo (ver s
 |---|---|---|
 | P0 | Reglas de corrección de la fragmentación | 50 000 ventas en 9 departamentos, sin duplicados |
 | P1 | Autonomía local con Beni aislado | Beni sigue registrando ventas |
-| P2 | Consulta global con un nodo caído | Error controlado en 4,1 s |
+| P2 | Consulta global con un nodo caído | Error controlado en 4,2 s |
 | P3 | Eliminación de fragmentos con un nodo caído | Las consultas que no lo requieren siguen funcionando |
 | P4 | Consulta tolerante a fallos | Resumen parcial que indica el fragmento caído |
-| P5 | Consistencia eventual del catálogo | Propagación en 0,2 s |
-| P6 | Sincronización diferida al reconectar | Beni se pone al día 2,9 s después de reconectarse |
+| P5 | Consistencia eventual del catálogo | Propagación en 0,5 s |
+| P6 | Sincronización diferida al reconectar | Beni se pone al día 5,1 s después de reconectarse |
 | P7 | Traspaso 2PC exitoso SC → BE | Confirmado en ambos nodos |
 | P8 | Caída del destino durante el 2PC | Rollback: el origen queda intacto |
 | P9 | Caída del coordinador | La recuperación confirma o deshace según el registro |
