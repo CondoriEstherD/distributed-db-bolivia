@@ -1,0 +1,17 @@
+# Panel Streamlit en la VM de consola. %i = usuario de la VM (p. ej. azureuser).
+#   sudo systemctl enable --now sgbdd-panel@azureuser
+# Escucha solo en 127.0.0.1: llega a internet únicamente por Tailscale Funnel (HTTPS).
+[Unit]
+Description=Panel SGBDD BoliviaDistribucion
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+User=%i
+WorkingDirectory=/home/%i/sgbdd
+ExecStart=/home/%i/sgbdd/.venv/bin/streamlit run dashboard/app.py --server.address 127.0.0.1 --server.port 8501
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

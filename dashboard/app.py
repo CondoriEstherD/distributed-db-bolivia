@@ -4,6 +4,7 @@
 
 Regla del panel: cada acción muestra el SQL que ejecuta. Lo evaluado es la base de datos.
 """
+import hmac
 import sys
 from pathlib import Path
 
@@ -12,9 +13,24 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # paquete sgbdd
 
 import comun  # noqa: E402
-from sgbdd.config import MODO  # noqa: E402
+from sgbdd.config import ENV, MODO  # noqa: E402
 
 st.set_page_config(page_title="SGBDD BoliviaDistribución", page_icon=":material/hub:", layout="wide")
+
+# Panel publicado en internet (VPS): con PANEL_CLAVE en .env, pide la contraseña antes de mostrar
+# cualquier página. Es una clave compartida del grupo; si se necesita identidad por persona,
+# reemplazar por st.login con un proveedor OIDC.
+CLAVE = ENV.get("PANEL_CLAVE", "")
+if CLAVE and not st.session_state.get("autorizado"):
+    with st.form("acceso", width=420):
+        st.subheader("SGBDD BoliviaDistribución", icon=":material/lock:")
+        clave = st.text_input("Contraseña del panel", type="password")
+        if st.form_submit_button("Entrar", type="primary", icon=":material/login:"):
+            if hmac.compare_digest(clave.encode(), CLAVE.encode()):
+                st.session_state.autorizado = True
+                st.rerun()
+            st.error("Contraseña incorrecta", icon=":material/error:")
+    st.stop()
 
 pagina = st.navigation({
     "Monitoreo": [

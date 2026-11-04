@@ -295,6 +295,12 @@ equipo con ningún participante, como en una arquitectura real.
 8. **Verificar desde E7.** `python gestion.py estado` debe mostrar los 6 nodos en línea y la replicación
    activa. Luego, `python -m pruebas.ejecutar_pruebas` y `streamlit run dashboard/app.py`.
 
+### Despliegue mixto con la nube
+
+El Nodo 6 (Beni) y la consola también pueden correr en servidores de **Azure for Students** (gratuito para
+estudiantes) dentro de la misma red Tailscale. El panel queda publicado por HTTPS con contraseña
+(`PANEL_CLAVE`) para verlo desde cualquier navegador. Guía paso a paso: [`docs/DESPLIEGUE_VPS.md`](docs/DESPLIEGUE_VPS.md).
+
 ### Diferencias del modo red
 
 | Aspecto | Modo `lab` (1 equipo) | Modo `red` (7 equipos) |

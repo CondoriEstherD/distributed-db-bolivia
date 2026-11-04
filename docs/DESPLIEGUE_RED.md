@@ -14,6 +14,10 @@
 
 Completar antes de empezar. **No escribir contraseñas en esta hoja.**
 
+> **Despliegue mixto con la nube:** el Nodo 6 (Beni) y la consola (E7) pueden correr en servidores de
+> Azure (`vm-beni` y `vm-consola`) en lugar de laptops. Se anota su IP de Tailscale igual que las demás
+> y se siguen los pasos de [`DESPLIEGUE_VPS.md`](DESPLIEGUE_VPS.md).
+
 | Equipo | Nodo que aloja | `NODOS_LOCALES` | Puerto | Integrante | IP de Tailscale (`tailscale ip -4`) |
 |---|---|---|---|---|---|
 | E1 | Nodo 1 · La Paz (central) | `lp` | 15431 | | 100.___.___.___ |
