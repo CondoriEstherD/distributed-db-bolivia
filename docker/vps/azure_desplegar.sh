@@ -6,6 +6,8 @@
 #   TS_AUTHKEY=tskey-auth-... REGION=westus2 SIZE=Standard_D2als_v6 bash sgbdd/docker/vps/azure_desplegar.sh
 #
 # Opcional: REGION_TJ=eastus2 (etc.) pone ese nodo en otra región si se agota la cuota de vCPU.
+# Azure for Students: 6 vCPU por región y pocas regiones permitidas. Con B2ats_v2 (2 vCPU) caben
+# 3 VM por región, p. ej. REGION=chilecentral REGION_TJ=northcentralus REGION_OR=northcentralus REGION_BE=northcentralus
 # Es idempotente: si se corta, se vuelve a ejecutar y continúa (las VM existentes se reutilizan).
 # Las contraseñas se generan una vez y se guardan en ~/sgbdd.env (la Cloud Shell la conserva).
 set -euo pipefail
@@ -29,7 +31,7 @@ paso "Cuota de vCPU en $REGION (cada VM usa los vCPU de $SIZE)"
 az vm list-usage -l "$REGION" --query "[?name.value=='cores'].{usados:currentValue,limite:limit}" -o table
 
 paso "Grupo de recursos $RG"
-az group create -n "$RG" -l "$REGION" -o none
+az group show -n "$RG" -o none 2>/dev/null || az group create -n "$RG" -l "$REGION" -o none
 
 paso "Máquinas virtuales (sin puertos de entrada: se administran por Tailscale y run-command)"
 for cod in "${NODOS[@]}"; do
