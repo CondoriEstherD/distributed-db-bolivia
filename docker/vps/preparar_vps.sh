@@ -20,8 +20,9 @@ if ! swapon --show | grep -q /swapfile; then
 fi
 
 paso "Paquetes base: Python y git"
-sudo apt-get update -qq
-sudo apt-get install -y -qq git python3-venv python3-pip >/dev/null
+# Recién creada, la VM suele estar instalando actualizaciones: se espera el candado de apt.
+sudo apt-get -o DPkg::Lock::Timeout=600 update -qq
+sudo apt-get -o DPkg::Lock::Timeout=600 install -y -qq git python3-venv python3-pip >/dev/null
 
 paso "Docker"
 if ! command -v docker >/dev/null; then
