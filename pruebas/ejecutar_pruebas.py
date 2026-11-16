@@ -164,7 +164,7 @@ def p6():
 def p7():
     """Traspaso 2PC exitoso SC → BE"""
     o, d, total = stock(ALM_SC, 10), stock(ALM_BE, 10), stock_nacional(10)
-    tid = traspasar(ALM_SC, ALM_BE, 10, 5, informar=silencio)
+    tid = traspasar(ALM_SC, ALM_BE, {10: 5}, informar=silencio)
     assert stock(ALM_SC, 10) == o - 5 and stock(ALM_BE, 10) == d + 5
     assert stock_nacional(10) == total and estado_log(tid) == "COMMIT"
     return f"SC {o}→{o - 5}, BE {d}→{d + 5}; stock nacional {total} sin cambio; log COMMIT"
@@ -175,7 +175,7 @@ def p8():
     o, d = stock(ALM_SC, 10), stock(ALM_BE, 10)
     threading.Timer(1.5, op.aislar, (BE,)).start()  # corta Beni durante la pausa tras el PREPARE de SC
     try:
-        traspasar(ALM_SC, ALM_BE, 10, 5, pausa=4, informar=silencio)
+        traspasar(ALM_SC, ALM_BE, {10: 5}, pausa=4, informar=silencio)
     except TraspasoError as e:
         motivo = str(e)
     else:
@@ -214,7 +214,7 @@ def p10():
 
     def uno(_):
         try:
-            traspasar(ALM_SC, ALM_BE, 2, 10, informar=silencio)
+            traspasar(ALM_SC, ALM_BE, {2: 10}, informar=silencio)
             return True
         except TraspasoError:
             return False

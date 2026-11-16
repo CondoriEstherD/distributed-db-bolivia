@@ -18,7 +18,7 @@ sys.path.insert(0, str(RAIZ / "dashboard"))  # `import comun` de las páginas (s
 # Aviso inofensivo de AppTest al usar la caché fuera de `streamlit run`.
 logging.getLogger("streamlit.runtime.scriptrunner_utils.script_run_context").disabled = True
 
-PAGINAS = ("panorama", "consultas", "venta", "traspaso", "catalogo", "fallas", "recuperacion")
+PAGINAS = ("panorama", "consultas", "traspaso", "catalogo", "fallas", "recuperacion")
 VERIFICACIONES = ("nacional", "otro", "tolerante", "venta_afectado", "venta_otro")
 
 
@@ -43,7 +43,7 @@ def pulsar(at, etiqueta=None, key=None):
 
 # ------------------------------------------------------------------ casos
 def carga():
-    """Las 7 páginas abren sin errores"""
+    """Las páginas abren sin errores"""
     for pagina in PAGINAS:
         abrir(pagina)
     return f"{len(PAGINAS)} páginas cargadas"

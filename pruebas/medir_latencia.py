@@ -35,7 +35,7 @@ def main():
         for ms in (0, 300, 800):
             op.latencia(BE, ms)
             c1 = cronometrar(lambda: consultar(LP, C1))
-            trp = cronometrar(lambda: traspasar(ALM_SC, ALM_BE, 10, 1, informar=silencio))
+            trp = cronometrar(lambda: traspasar(ALM_SC, ALM_BE, {10: 1}, informar=silencio))
             _, nuevo = cambiar_precio(1)
             cat = esperar(lambda: precio(BE, 1) == nuevo, 60)
             print(f"| {ms} ms | {c1} | {trp} | {cat:.1f} s |", flush=True)

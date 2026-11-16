@@ -13,7 +13,8 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # paquete sgbdd
 
 import comun  # noqa: E402
-from sgbdd.config import ENV, MODO  # noqa: E402
+import sucursal  # noqa: E402
+from sgbdd.config import ENV, MODO, NODOS  # noqa: E402
 
 st.set_page_config(page_title="SGBDD BoliviaDistribución", page_icon=":material/hub:", layout="wide")
 
@@ -32,13 +33,18 @@ if CLAVE and not st.session_state.get("autorizado"):
             st.error("Contraseña incorrecta", icon=":material/error:")
     st.stop()
 
+def pagina_sucursal(cod):
+    return st.Page(lambda: sucursal.mostrar(cod), title=f"N{NODOS[cod].num} · {NODOS[cod].nombre}",
+                   icon=":material/storefront:", url_path=f"sucursal_{cod}")
+
+
 pagina = st.navigation({
     "Monitoreo": [
         st.Page("app_pages/panorama.py", title="Panorama nacional", icon=":material/dashboard:", default=True),
     ],
+    "Sucursales (un servidor cada una)": [pagina_sucursal(cod) for cod in NODOS],
     "Operaciones distribuidas": [
         st.Page("app_pages/consultas.py", title="Consultas distribuidas", icon=":material/travel_explore:"),
-        st.Page("app_pages/venta.py", title="Venta local", icon=":material/point_of_sale:"),
         st.Page("app_pages/traspaso.py", title="Traspaso 2PC", icon=":material/sync_alt:"),
         st.Page("app_pages/catalogo.py", title="Replicación del catálogo", icon=":material/inventory_2:"),
     ],

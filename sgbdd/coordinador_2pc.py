@@ -17,6 +17,7 @@ from datetime import datetime
 
 import psycopg
 from psycopg import sql
+from psycopg.types.json import Jsonb
 
 from .config import NODOS, conectar, nodo_de_almacen
 
@@ -41,10 +42,15 @@ class TraspasoError(Exception):
 def _registrar(tid, estado, detalle=None, **datos):
     with conectar(NODO_LOG, USUARIO, autocommit=True) as c:
         if estado == "INICIADO":
+            items = datos.pop("items")
+            uno = len(items) == 1
             c.execute("""INSERT INTO traspasos_log (gid, origen, destino, id_almacen_origen,
-                             id_almacen_destino, id_producto, cantidad, estado)
+                             id_almacen_destino, id_producto, cantidad, items, estado)
                          VALUES (%(gid)s, %(origen)s, %(destino)s, %(alm_o)s, %(alm_d)s,
-                                 %(producto)s, %(cantidad)s, 'INICIADO')""", {"gid": tid, **datos})
+                                 %(producto)s, %(cantidad)s, %(items)s, 'INICIADO')""",
+                      {"gid": tid, **datos, "items": Jsonb({str(p): q for p, q in items.items()}),
+                       "producto": next(iter(items)) if uno else None,
+                       "cantidad": sum(items.values())})
         else:
             c.execute("""UPDATE traspasos_log SET estado = %s, detalle = %s, actualizado_en = now()
                          WHERE gid = %s""", (estado, detalle, tid))
@@ -68,9 +74,11 @@ def _resolver(nodo, gid, conn, commit, informar):
     informar(f"FASE 2 · {nodo}: {orden} '{gid}'")
 
 
-def traspasar(alm_origen, alm_destino, producto, cantidad, pausa=0.0, informar=print, caer_en=None):
-    """Traspasa `cantidad` unidades de `producto` entre almacenes de nodos distintos.
+def traspasar(alm_origen, alm_destino, items, pausa=0.0, informar=print, caer_en=None):
+    """Traspasa varios productos entre almacenes de nodos distintos en UNA transacción 2PC:
+    o se mueven todos los productos, o ninguno.
 
+    items: {id_producto: cantidad, ...}
     pausa: segundos de espera tras cada PREPARE (para cortar un enlace en la demostración).
     caer_en: 'preparado' | 'decision' simula la caída del coordinador (prueba de recuperación).
     Devuelve el identificador del traspaso o lanza TraspasoError.
@@ -78,17 +86,23 @@ def traspasar(alm_origen, alm_destino, producto, cantidad, pausa=0.0, informar=p
     origen, destino = nodo_de_almacen(alm_origen), nodo_de_almacen(alm_destino)
     if origen == destino:
         raise ValueError("El traspaso debe ser entre almacenes de nodos distintos")
-    if cantidad <= 0:
-        raise ValueError("La cantidad debe ser positiva")
+    # Orden fijo también dentro de cada nodo (id de producto): evita interbloqueos entre
+    # traspasos concurrentes que comparten productos.
+    items = {int(p): int(q) for p, q in sorted(items.items())}
+    if not items:
+        raise ValueError("Elija al menos un producto")
+    if any(q <= 0 for q in items.values()):
+        raise ValueError("Las cantidades deben ser positivas")
 
     tid = f"trp-{datetime.now():%Y%m%d%H%M%S}-{uuid.uuid4().hex[:6]}"
     try:
         _registrar(tid, "INICIADO", origen=origen.cod, destino=destino.cod, alm_o=alm_origen,
-                   alm_d=alm_destino, producto=producto, cantidad=cantidad)
+                   alm_d=alm_destino, items=items)
     except psycopg.Error as e:
         raise TraspasoError(f"registro de traspasos ({NODO_LOG}) no disponible: {e.__class__.__name__}") from e
-    informar(f"Traspaso {tid}: {cantidad} u. del producto {producto}, "
-             f"almacén {alm_origen} ({origen.nombre}) → {alm_destino} ({destino.nombre})")
+    lista = ", ".join(f"{q} u. del producto {p}" for p, q in items.items())
+    informar(f"Traspaso {tid}: {lista} · almacén {alm_origen} ({origen.nombre}) → "
+             f"{alm_destino} ({destino.nombre})")
 
     # Orden fijo de bloqueo (id de almacén ascendente): evita interbloqueos distribuidos
     # entre traspasos cruzados SC→BE y BE→SC.
@@ -101,9 +115,11 @@ def traspasar(alm_origen, alm_destino, producto, cantidad, pausa=0.0, informar=p
             conn = conectar(nodo, USUARIO)
             try:
                 conn.tpc_begin(gid)
-                cur = conn.execute(sentencia, {"almacen": almacen, "producto": producto, "cantidad": cantidad})
-                if sentencia is DESCONTAR and cur.rowcount == 0:
-                    raise TraspasoError(f"stock insuficiente en el almacén {almacen} (voto NO)")
+                for producto, cantidad in items.items():
+                    cur = conn.execute(sentencia, {"almacen": almacen, "producto": producto, "cantidad": cantidad})
+                    if sentencia is DESCONTAR and cur.rowcount == 0:
+                        raise TraspasoError(f"stock insuficiente del producto {producto} en el almacén "
+                                            f"{almacen} (voto NO)")
                 conn.tpc_prepare()
             except BaseException:
                 conn.close()  # sin PREPARE: cerrar la conexión revierte la transacción
@@ -150,7 +166,7 @@ def main():
     p.add_argument("--caer-en", choices=["preparado", "decision"], help="simula la caída del coordinador")
     a = p.parse_args()
     try:
-        traspasar(a.origen, a.destino, a.producto, a.cantidad, a.pausa, caer_en=a.caer_en)
+        traspasar(a.origen, a.destino, {a.producto: a.cantidad}, a.pausa, caer_en=a.caer_en)
     except TraspasoError as e:
         raise SystemExit(f"Traspaso abortado: {e}")
 

@@ -7,7 +7,7 @@ from sgbdd.config import NODOS, conectar
 st.caption("El catálogo se modifica solo en La Paz (publicación `pub_catalogo`) y se replica de forma "
            "asíncrona a los nodos 2 a 6 (consistencia eventual). En las réplicas la escritura está revocada.")
 
-prod = st.number_input("Producto (1 a 200)", 1, 200, 1)
+prod = st.selectbox("Producto", list(comun.productos()) or [1], format_func=comun.etiqueta_producto)
 sql_precio = f"SELECT precio_unitario FROM productos_catalogo WHERE id_producto = {int(prod)}"
 actual = comun.leer(comun.LP, sql_precio)
 
@@ -21,6 +21,7 @@ with izq.container(border=True):
         with conectar(comun.LP, "rol_admin_catalogo", autocommit=True) as c:
             c.execute("UPDATE productos_catalogo SET precio_unitario = %s WHERE id_producto = %s", (nuevo, prod))
         st.toast("Cambio publicado en La Paz", icon=":material/check_circle:")
+        comun.productos.clear()
 
 
 @st.fragment(run_every="3s")

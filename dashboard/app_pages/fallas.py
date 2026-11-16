@@ -36,21 +36,34 @@ with st.container(border=True):
         st.markdown(f"**{nodo}** · `{nodo.contenedor}` · estado actual:")
         comun.distintivo(estado[cod])
     if tipo == CORTAR:
-        st.caption("Simula la caída del enlace WAN del departamento (`docker network disconnect`). "
-                   "El servidor sigue encendido y atiende a su sucursal. En la red de 7 equipos: "
-                   "`tailscale down` en el equipo del nodo.")
+        st.caption("Caída del enlace WAN del departamento. El servidor sigue encendido y atiende a su sucursal "
+                   "(puede vender), pero ningún otro nodo lo alcanza: no hay consulta nacional completa ni "
+                   "traspasos con esa sucursal.")
     else:
         st.caption("Simula la caída total del servidor (`docker stop`). El nodo deja de atender incluso "
                    "localmente; al encenderlo, PostgreSQL se recupera y la réplica se sincroniza sola.")
 
     posible = nodo.local and (tipo == APAGAR or MODO == "lab")
-    with st.container(horizontal=True):
-        provocar = st.button("Provocar falla", type="primary", icon=":material/bolt:",
-                             disabled=not posible or estado[cod] != "EN LÍNEA")
-        restaurar = st.button("Restaurar nodo", icon=":material/restart_alt:",
-                              disabled=not nodo.local or estado[cod] == "EN LÍNEA")
-    if not posible:
-        st.caption(":material/info: Este nodo no está en este equipo: provoque la falla en su equipo.")
+    provocar = restaurar = False
+    if posible:
+        with st.container(horizontal=True):
+            provocar = st.button("Provocar falla", type="primary", icon=":material/bolt:",
+                                 disabled=estado[cod] != "EN LÍNEA")
+            restaurar = st.button("Restaurar nodo", icon=":material/restart_alt:",
+                                  disabled=estado[cod] == "EN LÍNEA")
+    else:
+        # Despliegue en red: la falla se provoca EN el servidor de la sucursal, como pasaría en la realidad.
+        falla, vuelta = (("tailscale down", "tailscale up") if tipo == CORTAR
+                         else (f"docker stop {nodo.contenedor}", f"docker start {nodo.contenedor}"))
+        st.markdown(f"La falla se provoca en el propio servidor de la sucursal: portal de Azure → "
+                    f"**vm-{cod}** → **Ejecutar comando** → **RunShellScript**:")
+        izq, der = st.columns(2)
+        izq.code(falla + "        # provocar la falla", language="bash")
+        der.code(vuelta + "        # restaurar", language="bash")
+        if st.button("Actualizar estado", icon=":material/refresh:"):
+            st.session_state.pop("fallas_res", None)
+            comun.refrescar()
+            st.rerun()
 
 if cod == "be" and nodo.local:
     with st.container(border=True):
@@ -135,6 +148,9 @@ def consulta_tolerante():
 
 def venta(n):
     def _():
+        if not n.local and not comun.en_linea(n.cod):
+            raise RuntimeError(f"La consola no alcanza a {n.nombre}. Su venta local se hace en su propio servidor "
+                               f"(página «N{n.num} · {n.nombre}» → comando para el portal).")
         v = op.vender_local(n) if n.local else comun.consulta(
             n, "SELECT * FROM venta_demo(%s)", (n.deptos[0],), "rol_cajero").iloc[0]
         return f"{n.nombre} registró la venta #{v['id_venta']} (Bs {float(v['total_bs']):,.2f})", None

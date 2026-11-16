@@ -72,8 +72,38 @@ def almacenes():
     return [n.num * 100 + k for n in NODOS.values() for k in range(1, 2 * len(n.deptos) + 1)]
 
 
+def depto_de_almacen(a):
+    """Dos almacenes por departamento, numerados en orden alfabético (04_datos_prueba.sql:
+    ORDER BY d, n): 401, 402 → CH · 403, 404 → TJ."""
+    return sorted(nodo_de_almacen(a).deptos)[(a % 100 - 1) // 2]
+
+
 def etiqueta_almacen(a):
-    return f"{a} · {nodo_de_almacen(a).nombre}"
+    n = nodo_de_almacen(a)
+    return f"{a} · Almacén {depto_de_almacen(a)}-{(a % 100 - 1) % 2 + 1} · {n.nombre} (Nodo {n.num})"
+
+
+def en_linea(cod):
+    return next(f["estado"] for f in estado() if f["cod"] == cod) == "EN LÍNEA"
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def productos():
+    """Catálogo {id: (nombre, precio)}. Es una réplica total: se lee del primer nodo que responda."""
+    for nodo in NODOS.values():
+        try:
+            with conectar(nodo, "fdw_lector", autocommit=True) as c:
+                filas = c.execute("SELECT id_producto, nombre, precio_unitario FROM productos_catalogo "
+                                  "ORDER BY id_producto").fetchall()
+            return {i: (nombre, float(precio)) for i, nombre, precio in filas}
+        except psycopg.OperationalError:
+            continue
+    return {}
+
+
+def etiqueta_producto(p):
+    nombre, precio = productos().get(p, ("?", 0))
+    return f"{p} · {nombre} (Bs {precio:,.2f})"
 
 
 def miles(n):

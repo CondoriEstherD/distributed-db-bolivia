@@ -165,6 +165,9 @@ def configurar(informar=print):
     lp = NODOS["lp"]
     if not locales():
         informar("  Este equipo no aloja nodos (NODOS_LOCALES vacío): no hay nada que configurar.")
+    if NODOS["cb"].local:
+        ejecutar_archivo(NODOS["cb"], "nodo3_cb/post/10_traspasos_items.sql")
+        informar(f"  ✔ {NODOS['cb']}: registro de traspasos con varios productos")
     for nodo in locales():
         if nodo is lp:
             continue

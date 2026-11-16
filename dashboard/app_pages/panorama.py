@@ -16,8 +16,10 @@ suscritas = sum(f["replicacion"] == "suscripción activa" for f in estado)
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Nodos en línea", f"{en_linea} / 6", border=True)
-c2.metric("Ventas registradas", comun.miles(ventas), border=True,
-          help="Suma de las ventas de los nodos que responden.")
+c2.metric("Ventas registradas" if en_linea == 6 else f"Ventas ({en_linea} nodos en línea)",
+          comun.miles(ventas), border=True,
+          help="Suma de las ventas de los nodos que responden. Un nodo sin conexión no se cuenta, "
+               "pero sus ventas siguen guardadas en su propio servidor.")
 c3.metric("Réplicas del catálogo activas", f"{suscritas} / 5", border=True)
 c4.metric("Transacciones 2PC en duda", pendientes, border=True,
           help="Transacciones preparadas sin resolver (pg_prepared_xacts).")
