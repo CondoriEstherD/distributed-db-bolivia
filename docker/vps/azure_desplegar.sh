@@ -45,8 +45,13 @@ for cod in "${NODOS[@]}"; do
         --public-ip-sku Standard --nsg-rule NONE --no-wait -o none
 done
 for cod in "${NODOS[@]}"; do az vm wait -g "$RG" -n "vm-$cod" --created; done
-for cod in "${NODOS[@]}"; do   # 03:00 UTC = 23:00 en La Paz
-    az vm auto-shutdown -g "$RG" -n "vm-$cod" --time 0300 -o none
+for cod in "${NODOS[@]}"; do   # Apagado diario 23:00 hora de La Paz, en la región de la VM
+    read -r id region < <(az vm show -g "$RG" -n "vm-$cod" --query "[id,location]" -o tsv | paste -sd' ')
+    az resource create -g "$RG" -n "shutdown-computevm-vm-$cod" -l "$region" \
+        --resource-type Microsoft.DevTestLab/schedules -o none -p "{\"status\":\"Enabled\",
+        \"taskType\":\"ComputeVmShutdownTask\",\"dailyRecurrence\":{\"time\":\"2300\"},
+        \"timeZoneId\":\"SA Western Standard Time\",\"targetResourceId\":\"$id\"}" \
+        || echo "  ⚠ vm-$cod sin apagado automático: actívelo en el portal (VM → Apagado automático)"
 done
 
 paso "Preparar cada VM: Docker, Tailscale y el proyecto (3-5 min, en paralelo)"
