@@ -18,8 +18,8 @@ ESTILO_ESTADO = {  # estado → (color del distintivo, icono)
 }
 
 
-def consulta(nodo, sql, params=None, usuario="rol_analista"):
-    with conectar(nodo, usuario, autocommit=True) as c:
+def consulta(nodo, sql, params=None, usuario="rol_analista", statement_timeout_ms=8000):
+    with conectar(nodo, usuario, autocommit=True, statement_timeout_ms=statement_timeout_ms) as c:
         cur = c.execute(sql, params)
         return pd.DataFrame(cur.fetchall(), columns=[d.name for d in cur.description])
 

@@ -127,7 +127,8 @@ def consulta_otro():
 
 def consulta_tolerante():
     df = comun.consulta(comun.LP, """SELECT fragmento, departamento_id, ventas, estado
-                                     FROM resumen_nacional_disponible() ORDER BY fragmento, departamento_id""")
+                                     FROM resumen_nacional_disponible() ORDER BY fragmento, departamento_id""",
+                        statement_timeout_ms=30000)  # recorre los 6 nodos: en WAN real, ~10 s con uno caído
     caidos = df[df.estado.str.startswith("FUERA")].fragmento.tolist()
     return (f"Fragmentos fuera de línea: {', '.join(caidos)}" if caidos else "Los 6 fragmentos responden"), df
 

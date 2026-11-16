@@ -27,8 +27,8 @@ silencio = lambda *_: None  # noqa: E731
 
 
 # ------------------------------------------------------------------ utilidades
-def consultar(nodo, sql, params=None, usuario="rol_analista"):
-    with conectar(nodo, usuario, autocommit=True) as c:
+def consultar(nodo, sql, params=None, usuario="rol_analista", statement_timeout_ms=8000):
+    with conectar(nodo, usuario, autocommit=True, statement_timeout_ms=statement_timeout_ms) as c:
         return c.execute(sql, params).fetchall()
 
 
@@ -134,7 +134,7 @@ def p3():
 def p4():
     """Consulta tolerante a fallos"""
     op.aislar(BE)
-    filas = consultar(LP, "SELECT fragmento, estado FROM resumen_nacional_disponible()")
+    filas = consultar(LP, "SELECT fragmento, estado FROM resumen_nacional_disponible()", statement_timeout_ms=30000)
     caidos = {f for f, e in filas if e.startswith("FUERA")}
     en_linea = {f for f, e in filas if e == "EN LÍNEA"}
     assert len(caidos) == 1 and caidos.pop().endswith("fv6_be"), caidos
@@ -263,7 +263,7 @@ def p13():
     """Caída total de Beni (servidor apagado) y reincorporación"""
     op.apagar(BE)
     v_sc = op.vender_local(SC)
-    filas = consultar(LP, "SELECT fragmento, estado FROM resumen_nacional_disponible()")
+    filas = consultar(LP, "SELECT fragmento, estado FROM resumen_nacional_disponible()", statement_timeout_ms=30000)
     caidos = {f for f, e in filas if e.startswith("FUERA")}
     assert len(caidos) == 1 and caidos.pop().endswith("fv6_be"), caidos
     _, nuevo = cambiar_precio(1)

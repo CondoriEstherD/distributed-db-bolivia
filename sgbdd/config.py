@@ -93,13 +93,18 @@ def nodo_de_almacen(id_almacen: int) -> Nodo:
     raise ValueError(f"El almacén {id_almacen} no pertenece a ningún nodo")
 
 
-def conectar(nodo: Nodo, usuario: str, autocommit: bool = False) -> psycopg.Connection:
-    """Conexión con detección rápida de fallas de red (≤ 3 s al conectar, ≤ 5 s en curso)."""
+def conectar(nodo: Nodo, usuario: str, autocommit: bool = False,
+             statement_timeout_ms: int = 8000) -> psycopg.Connection:
+    """Conexión con detección rápida de fallas de red (≤ 3 s al conectar, ≤ 5 s en curso).
+
+    `statement_timeout_ms` se amplía solo para consultas que recorren los nodos uno por uno
+    (resumen tolerante): en la WAN real cada nodo caído consume su connect_timeout.
+    """
     return psycopg.connect(
         host=nodo.host, port=nodo.port, dbname=nodo.bd,
         user=usuario, password=CONTRASENAS[usuario],
         connect_timeout=3, tcp_user_timeout=5000,
         keepalives=1, keepalives_idle=2, keepalives_interval=1, keepalives_count=2,
-        options="-c statement_timeout=8000 -c lock_timeout=3000",
+        options=f"-c statement_timeout={statement_timeout_ms} -c lock_timeout=3000",
         application_name="sgbdd", autocommit=autocommit,
     )
