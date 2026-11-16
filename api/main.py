@@ -21,6 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 import psycopg
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from psycopg import sql as psql
 from psycopg.rows import dict_row
 from pydantic import BaseModel
 
@@ -108,20 +109,113 @@ def nodo(cod):
     return NODOS[cod]
 
 
-_estado = {"t": 0.0, "v": []}
+# ------------------------------------------------------------------ terminal local de la sucursal
+# Un corte de la WAN aísla la BASE de la sucursal de las demás sucursales (regla de firewall en su
+# servidor), pero la sucursal sigue operando: su caja entra al servidor por la red local. La consola
+# la emula entrando al servidor del nodo (SSH en red; Docker en lab) y usando psql DENTRO del
+# contenedor (socket local), sin pasar por la red de bases de datos.
+MARCA = "-m comment --comment sgbdd-aislado -j DROP"
+REGLAS = (f"DOCKER-USER -i tailscale0 {MARCA}", f"DOCKER-USER -o tailscale0 {MARCA}")
+
+
+def _ejecutar(args, entrada=None, timeout=25):
+    try:
+        return subprocess.run(args, input=entrada, capture_output=True, text=True, encoding="utf-8", timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        raise HTTPException(503, "El servidor de la sucursal no respondió. Si Tailscale pide verificación SSH, "
+                                 "ponga la regla SSH de la ACL en modo «accept».") from e
+
+
+def en_servidor(n, comando, entrada=None, timeout=25):
+    """Comando de shell en el servidor (VM) del nodo, por SSH sobre Tailscale (solo modo red)."""
+    return _ejecutar(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=6", f"azureuser@vm-{n.cod}", comando],
+                     entrada, timeout)
+
+
+def psql_local(n, sql_texto, params=None, usuario="fdw_lector"):
+    """SQL en la consola local del servidor del nodo (no usa la WAN). Devuelve filas como dicts."""
+    if params:
+        sql_texto = sql_texto % tuple(psql.Literal(p).as_string(None) for p in params)
+    consulta = f"SELECT coalesce(json_agg(t), '[]') FROM ({sql_texto.strip().rstrip(';')}) t;"
+    cmd = ["docker", "exec", "-i", n.contenedor, "psql", "-X", "-q", "-At", "-v", "ON_ERROR_STOP=1",
+           "-U", usuario, "-d", n.bd]
+    r = en_servidor(n, " ".join(cmd), consulta) if MODO == "red" else _ejecutar(cmd, consulta)
+    if r.returncode != 0:
+        raise HTTPException(503, f"{n} (terminal local): {error(r.stderr or r.stdout)}")
+    return json.loads(r.stdout.strip() or "[]")
+
+
+def _diagnostico(f):
+    """Nodo que no responde por la WAN (modo red): ¿aislado, apagado o servidor inalcanzable?"""
+    n = NODOS[f["cod"]]
+    cmd = (f"docker inspect -f '{{{{.State.Running}}}}' {n.contenedor}; "
+           f"sudo iptables -C {REGLAS[0]} 2>/dev/null && echo AISLADO; "
+           f"docker exec {n.contenedor} psql -X -At -U postgres -d {n.bd} -c 'SELECT count(*) FROM ventas' 2>/dev/null")
+    try:
+        r = en_servidor(n, cmd, timeout=12)
+    except HTTPException:
+        return f
+    lineas = r.stdout.split()
+    if r.returncode == 255 or not lineas:  # SSH falló: VM apagada o sin Tailscale
+        return f
+    if lineas[0] == "false":
+        return {**f, "estado": "APAGADO", "replicacion": "servidor de base de datos detenido"}
+    if "AISLADO" in lineas:
+        ventas = int(lineas[-1]) if lineas[-1].isdigit() else None
+        return {**f, "estado": "AISLADO", "ventas": ventas,
+                "replicacion": "enlace WAN cortado: opera solo localmente"}
+    return f
+
+
+_estado = {"t": 0.0, "v": [], "actualizando": False}
 _estado_lock = threading.Lock()
 
 
+def _calcular_estado():
+    filas_estado = op.estado_nodos()
+    if MODO == "red":
+        with ThreadPoolExecutor(max_workers=len(NODOS)) as ex:
+            filas_estado = list(ex.map(lambda f: f if f["en_linea"] else _diagnostico(f), filas_estado))
+    return filas_estado
+
+
+def _refrescar_estado():
+    try:
+        v = _calcular_estado()
+        with _estado_lock:
+            _estado.update(t=time.time(), v=v)
+    finally:
+        _estado["actualizando"] = False
+
+
 def estado(forzar=False):
-    """Estado de los 6 nodos, reutilizado 4 s (cada lectura consulta los 6 servidores)."""
-    with _estado_lock:
-        if forzar or time.time() - _estado["t"] > 4:
-            _estado.update(t=time.time(), v=op.estado_nodos())
+    """Estado de los 6 nodos. Con un nodo caído calcularlo tarda varios segundos (tiempos límite),
+    así que se devuelve el último valor y se actualiza en segundo plano cada 5 s."""
+    if forzar or not _estado["v"]:
+        with _estado_lock:
+            if forzar or not _estado["v"]:
+                _estado.update(t=time.time(), v=_calcular_estado())
         return _estado["v"]
+    if time.time() - _estado["t"] > 5 and not _estado["actualizando"]:
+        _estado["actualizando"] = True
+        threading.Thread(target=_refrescar_estado, daemon=True).start()
+    return _estado["v"]
+
+
+def estado_de(cod):
+    return next(f["estado"] for f in estado() if f["cod"] == cod)
 
 
 def en_linea(cod):
-    return any(f["cod"] == cod and f["estado"] == "EN LÍNEA" for f in estado())
+    return estado_de(cod) == "EN LÍNEA"
+
+
+def leer_sucursal(n, sql_texto, params=None, usuario="fdw_lector"):
+    """Lectura/escritura de UNA sucursal: por la red si está en línea; si su enlace WAN está cortado,
+    por su terminal local (la sucursal sigue operando: autonomía local)."""
+    if estado_de(n.cod) == "AISLADO":
+        return psql_local(n, sql_texto, params, usuario)
+    return filas(n, sql_texto, params, usuario)
 
 
 def depto_de_almacen(a):
@@ -201,36 +295,36 @@ WHERE a.departamento_id = %s GROUP BY 1"""
 @app.get("/api/nodos/{cod}/resumen")
 def api_resumen(cod: str):
     n = nodo(cod)
-    inv = filas(n, SQL_INV_RESUMEN)[0]
-    return {"sql": f"{SQL_RESUMEN};\n\n{SQL_INV_RESUMEN};", "por_departamento": filas(n, SQL_RESUMEN),
+    inv = leer_sucursal(n, SQL_INV_RESUMEN)[0]
+    return {"sql": f"{SQL_RESUMEN};\n\n{SQL_INV_RESUMEN};", "por_departamento": leer_sucursal(n, SQL_RESUMEN),
             "unidades": inv["unidades"], "bajo_minimo": inv["bajo_minimo"]}
 
 
 @app.get("/api/nodos/{cod}/ventas")
 def api_ventas(cod: str, limite: int = 50):
-    return {"sql": SQL_VENTAS % limite, "filas": filas(nodo(cod), SQL_VENTAS, (min(limite, 500),))}
+    return {"sql": SQL_VENTAS % limite, "filas": leer_sucursal(nodo(cod), SQL_VENTAS, (min(limite, 500),))}
 
 
 @app.get("/api/nodos/{cod}/ventas/{id_venta}")
 def api_detalle(cod: str, id_venta: int):
-    return {"sql": SQL_DETALLE % id_venta, "filas": filas(nodo(cod), SQL_DETALLE, (id_venta,))}
+    return {"sql": SQL_DETALLE % id_venta, "filas": leer_sucursal(nodo(cod), SQL_DETALLE, (id_venta,))}
 
 
 @app.get("/api/nodos/{cod}/inventario")
 def api_inventario(cod: str):
-    return {"sql": SQL_INVENTARIO, "filas": filas(nodo(cod), SQL_INVENTARIO)}
+    return {"sql": SQL_INVENTARIO, "filas": leer_sucursal(nodo(cod), SQL_INVENTARIO)}
 
 
 @app.get("/api/nodos/{cod}/catalogo")
 def api_catalogo_nodo(cod: str):
-    return {"sql": SQL_CATALOGO, "filas": filas(nodo(cod), SQL_CATALOGO)}
+    return {"sql": SQL_CATALOGO, "filas": leer_sucursal(nodo(cod), SQL_CATALOGO)}
 
 
 @app.get("/api/nodos/{cod}/clientes")
 def api_clientes(cod: str, departamento: str):
     n = nodo(cod)
-    return {"clientes": filas(n, SQL_CLIENTES, (departamento,)),
-            "stock": {r["id_producto"]: r["stock"] for r in filas(n, SQL_STOCK_DEPTO, (departamento,))}}
+    return {"clientes": leer_sucursal(n, SQL_CLIENTES, (departamento,)),
+            "stock": {r["id_producto"]: r["stock"] for r in leer_sucursal(n, SQL_STOCK_DEPTO, (departamento,))}}
 
 
 class Item(BaseModel):
@@ -254,20 +348,12 @@ def api_vender(cod: str, venta: Venta):
     empleado = n.num * 100 + 1
     sql = (f"SELECT registrar_venta('{venta.departamento}', {venta.id_cliente}, {empleado},\n"
            f"       '{items}'::jsonb);")
-    try:
-        r = filas(n, "SELECT registrar_venta(%s, %s, %s, %s::jsonb) AS id_venta",
-                  (venta.departamento, venta.id_cliente, empleado, items), "rol_cajero")
-        id_venta = r[0]["id_venta"]
-    except HTTPException:
-        if not n.local:
-            raise
-        try:  # modo lab con el nodo aislado: la consola local del servidor no usa la red
-            id_venta = int(op.consola(n, sql.rstrip(";"), usuario="rol_cajero")[0][0])
-        except RuntimeError as e:
-            raise HTTPException(503, error(e)) from e
-    total = filas(n, "SELECT total_bs FROM ventas WHERE id_venta = %s", (id_venta,))[0]["total_bs"]
+    local = estado_de(cod) == "AISLADO"
+    id_venta = leer_sucursal(n, "SELECT registrar_venta(%s, %s, %s, %s::jsonb) AS id_venta",
+                             (venta.departamento, venta.id_cliente, empleado, items), "rol_cajero")[0]["id_venta"]
+    total = leer_sucursal(n, "SELECT total_bs FROM ventas WHERE id_venta = %s", (id_venta,))[0]["total_bs"]
     _estado["t"] = 0
-    return {"sql": sql, "id_venta": id_venta, "total_bs": total}
+    return {"sql": sql, "id_venta": id_venta, "total_bs": total, "terminal_local": local}
 
 
 # ------------------------------------------------------------------ consultas distribuidas
@@ -358,10 +444,10 @@ class Traspaso(BaseModel):
 def api_traspasar(t: Traspaso):
     """Ejecuta el 2PC y transmite cada paso del protocolo (NDJSON) mientras ocurre."""
     o, d = nodo_de_almacen(t.origen), nodo_de_almacen(t.destino)
-    caidos = [str(n) for n in (o, d) if not en_linea(n.cod)]
+    caidos = [f"{n} ({estado_de(n.cod).lower()})" for n in (o, d) if not en_linea(n.cod)]
     if caidos:
-        raise HTTPException(409, f"{' y '.join(caidos)} sin conexión: el 2PC necesita el voto de ambas "
-                                 "sucursales. Sus ventas locales siguen permitidas.")
+        raise HTTPException(409, f"{' y '.join(caidos)}: el 2PC necesita el voto de ambas sucursales por la "
+                                 "red. Las ventas locales de una sucursal aislada siguen permitidas.")
     cola = queue.Queue()
 
     def trabajar():
@@ -441,20 +527,45 @@ def api_precio(id_producto: int, p: Precio):
 
 
 # ------------------------------------------------------------------ fallas
+# Comandos que se ejecutan EN el servidor de la sucursal (modo red). Cortar el enlace no apaga
+# Tailscale: bloquea solo el tráfico de la base hacia y desde las otras sucursales (WAN), así la
+# sucursal sigue atendiendo localmente.
+COMANDOS_FALLA = {
+    "aislar": " && ".join(f"(sudo iptables -C {r} 2>/dev/null || sudo iptables -I {r})" for r in REGLAS),
+    "reconectar": "; ".join(f"while sudo iptables -D {r} 2>/dev/null; do :; done" for r in REGLAS),
+    "apagar": "docker stop {contenedor}",
+    "encender": "docker start {contenedor}",
+}
+
+
+@app.get("/api/fallas/comandos")
+def api_comandos_falla():
+    return COMANDOS_FALLA
+
+
 @app.post("/api/fallas/{cod}/{accion}")
 def api_falla(cod: str, accion: str):
-    """Solo para nodos de este equipo (modo lab). En red la falla se provoca en el servidor del nodo."""
     n = nodo(cod)
-    acciones = {"aislar": op.aislar, "reconectar": op.reconectar, "apagar": op.apagar,
-                "encender": lambda x: op.encender(x, informar=lambda *_: None)}
-    if accion not in acciones:
+    if accion not in COMANDOS_FALLA:
         raise HTTPException(404, "Acción desconocida")
-    try:
-        acciones[accion](n)
-    except RuntimeError as e:
-        raise HTTPException(409, error(e)) from e
+    if MODO == "red":
+        r = en_servidor(n, COMANDOS_FALLA[accion].format(contenedor=n.contenedor))
+        if r.returncode not in (0, 1):
+            raise HTTPException(503, f"{n}: {error(r.stderr or r.stdout)}")
+    else:
+        acciones = {"aislar": op.aislar, "reconectar": op.reconectar, "apagar": op.apagar,
+                    "encender": lambda x: op.encender(x, informar=lambda *_: None)}
+        try:
+            acciones[accion](n)
+        except RuntimeError as e:
+            raise HTTPException(409, error(e)) from e
+    with _conexiones_lock:  # las conexiones guardadas a ese nodo quedaron rotas
+        for clave in [k for k in _conexiones if k[0] == cod]:
+            par = _conexiones.pop(clave)
+            if par[0] is not None:
+                par[0].close()
     estado(forzar=True)
-    return {"ok": True}
+    return {"ok": True, "estado": estado_de(cod)}
 
 
 @app.post("/api/verificar/{caso}")
@@ -480,12 +591,12 @@ def api_verificar(caso: str, cod: str = "be"):
         elif caso in ("venta_afectado", "venta_otro"):
             n = afectado if caso == "venta_afectado" else otro
             sql = f"SELECT * FROM venta_demo('{n.deptos[0]}');  -- como rol_cajero en {n.bd}"
-            if not n.local and not en_linea(n.cod):
-                raise HTTPException(503, f"La consola no alcanza a {n.nombre}: su venta local se hace en su "
-                                         "propio servidor (ver la página de la sucursal).")
-            v = (op.vender_local(n) if n.local else
-                 filas(n, "SELECT * FROM venta_demo(%s)", (n.deptos[0],), "rol_cajero")[0])
-            texto = f"{n.nombre} registró la venta #{v['id_venta']} (Bs {float(v['total_bs']):,.2f})"
+            e = estado_de(n.cod)
+            if e not in ("EN LÍNEA", "AISLADO"):
+                raise HTTPException(503, f"{n.nombre}: servidor {e.lower()}, no atiende ni siquiera localmente")
+            v = leer_sucursal(n, "SELECT * FROM venta_demo(%s)", (n.deptos[0],), "rol_cajero")[0]
+            via = " desde su terminal local (sin WAN)" if e == "AISLADO" else ""
+            texto = f"{n.nombre} registró la venta #{v['id_venta']} (Bs {float(v['total_bs']):,.2f}){via}"
         else:
             raise HTTPException(404, "Caso desconocido")
         ok = True

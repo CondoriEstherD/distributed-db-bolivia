@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Boxes, CheckCircle2, Loader2, Minus, PackageX, Plus, Receipt, ShoppingCart, Trash2, Wallet, WifiOff } from 'lucide-react'
+import { AlertTriangle, Boxes, CheckCircle2, Loader2, Minus, PackageX, Plus, Receipt, ShoppingCart, Trash2, Unplug, Wallet, WifiOff } from 'lucide-react'
 import { useParams } from 'react-router'
 import { toast } from 'sonner'
 
@@ -37,27 +37,35 @@ export default function Sucursal() {
           contenedor <code className="font-mono text-xs">{nodo.contenedor}</code> · base <code className="font-mono text-xs">{nodo.bd}</code>.
           Todo lo que ve aquí se lee de la base de <b>esta</b> sucursal.
         </>} />
-      {nodo.en_linea ? <Contenido key={cod} nodo={nodo} /> : <SinConexion nodo={nodo} />}
+      {nodo.estado === 'AISLADO' && (
+        <Alert className="border-amber-300 bg-amber-50 text-amber-900">
+          <Unplug />
+          <AlertTitle>Enlace WAN cortado · la sucursal opera en modo local</AlertTitle>
+          <AlertDescription className="text-amber-900/80">
+            Esta página funciona como la <b>terminal de la propia sucursal</b>: entra directo a su servidor, sin pasar por la red nacional.
+            Puede consultar y <b>registrar ventas</b> (autonomía local). En cambio, <b>no se permiten traspasos</b> con esta sucursal,
+            La Paz no ve sus datos en la consulta nacional y la réplica del catálogo queda pendiente hasta reconectar.
+          </AlertDescription>
+        </Alert>
+      )}
+      {nodo.en_linea || nodo.estado === 'AISLADO' ? <Contenido key={cod} nodo={nodo} /> : <SinConexion nodo={nodo} />}
     </>
   )
 }
 
 function SinConexion({ nodo }: { nodo: Nodo }) {
   const red = nodo.servidor.startsWith('vm-')
+  const apagado = nodo.estado === 'APAGADO'
   return (
-    <Seccion titulo={<span className="flex items-center gap-2"><WifiOff className="size-4 text-destructive" /> La consola no alcanza a esta sucursal</span>}
-      descripcion="Desde aquí no se ven sus datos ni se pueden hacer traspasos con ella. Pero la sucursal sigue operando por su cuenta (autonomía local): sus ventas se registran en su propio servidor.">
-      <p className="text-sm">
-        Para demostrarlo, registre una venta directamente en el servidor de la sucursal
-        {red ? <> (portal de Azure → <b>{nodo.servidor}</b> → <b>Ejecutar comando</b> → RunShellScript):</> : ':'}
-      </p>
-      <BloqueSql titulo="Venta local en el servidor de la sucursal" nota="bash"
-        sql={`docker exec ${nodo.contenedor} psql -U rol_cajero -d ${nodo.bd} -c "SELECT * FROM venta_demo('${nodo.deptos[0]}')"`} />
-      {red && (
-        <p className="text-xs text-muted-foreground">
-          Para restablecer: <code className="font-mono">tailscale up</code> (enlace cortado) o <code className="font-mono">docker start {nodo.contenedor}</code> (servidor apagado), en la misma pantalla del portal.
-        </p>
-      )}
+    <Seccion titulo={<span className="flex items-center gap-2"><WifiOff className="size-4 text-destructive" />
+      {apagado ? 'Servidor de base de datos apagado' : 'Servidor de la sucursal inalcanzable'}</span>}
+      descripcion={apagado
+        ? 'Caída total: PostgreSQL de esta sucursal está detenido, así que no atiende ni siquiera localmente. Las demás sucursales siguen operando.'
+        : 'No se llega ni a la máquina de la sucursal (VM apagada o sin red). Es como un corte de luz en la oficina: no hay terminal local que pueda vender. Las demás sucursales siguen operando.'}>
+      <p className="text-sm">Para restablecer{red ? <> en el portal de Azure → <b>{nodo.servidor}</b>:</> : ':'}</p>
+      <BloqueSql titulo="Restablecer" nota="bash" sql={apagado
+        ? `docker start ${nodo.contenedor}        # Ejecutar comando → RunShellScript`
+        : red ? 'tailscale up        # Ejecutar comando → RunShellScript (o «Iniciar» si la VM está detenida)' : 'docker start ' + nodo.contenedor} />
     </Seccion>
   )
 }
@@ -250,10 +258,11 @@ function PuntoDeVenta({ nodo }: { nodo: Nodo }) {
   const sql = `SELECT registrar_venta('${depto}', ${cliElegido}, ${nodo.num * 100 + 1},\n       '${JSON.stringify(items)}'::jsonb);   -- como rol_cajero en ${nodo.bd}`
 
   const vender = useMutation({
-    mutationFn: () => api<{ id_venta: number; total_bs: number; sql: string }>(`/nodos/${nodo.cod}/ventas`,
+    mutationFn: () => api<{ id_venta: number; total_bs: number; sql: string; terminal_local: boolean }>(`/nodos/${nodo.cod}/ventas`,
       { body: { departamento: depto, id_cliente: cliElegido, items } }),
     onSuccess: (r) => {
-      toast.success(`Venta #${r.id_venta} registrada en ${nodo.nombre}`, { description: fmt.bs(r.total_bs) })
+      toast.success(`Venta #${r.id_venta} registrada en ${nodo.nombre}`,
+        { description: `${fmt.bs(r.total_bs)}${r.terminal_local ? ' · desde la terminal local, sin red nacional' : ''}` })
       setCarrito({})
       for (const k of ['resumen', 'ventas', 'inventario', 'clientes']) cliente.invalidateQueries({ queryKey: [k, nodo.cod] })
       cliente.invalidateQueries({ queryKey: ['estado'] })

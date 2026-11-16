@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Filter, Globe, Loader2, Play, PlayCircle, Power, RefreshCw, ShieldCheck, Store, Unplug, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -47,9 +47,9 @@ export default function Fallas() {
   async function provocar(a: string) {
     setAccion(true)
     try {
-      await api(`/fallas/${cod}/${a}`, { method: 'POST' })
+      const r = await api<{ estado: string }>(`/fallas/${cod}/${a}`, { method: 'POST' })
       setRes({})
-      toast.success('Listo')
+      toast.success(`${nodo?.nodo}: ${r.estado.toLowerCase()}`)
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -58,8 +58,9 @@ export default function Fallas() {
     }
   }
 
-  const [falla, vuelta] = tipo === 'cortar' ? ['tailscale down', 'tailscale up']
-    : [`docker stop ${nodo?.contenedor}`, `docker start ${nodo?.contenedor}`]
+  const comandos = useQuery({ queryKey: ['comandos-falla'], queryFn: () => api<Record<string, string>>('/fallas/comandos'), staleTime: Infinity })
+  const cmd = (k: string) => (comandos.data?.[k] ?? '').replace('{contenedor}', nodo?.contenedor ?? '').replaceAll(' && ', ' &&\n').replaceAll('; ', ';\n')
+  const [falla, vuelta] = tipo === 'cortar' ? [cmd('aislar'), cmd('reconectar')] : [cmd('apagar'), cmd('encender')]
 
   return (
     <>
@@ -83,21 +84,23 @@ export default function Fallas() {
                 </button>
               ))}
           </div>
-          {desdePanel ? (
-            <div className="flex gap-2">
-              <Button disabled={accion || !nodo?.en_linea} onClick={() => provocar(tipo === 'cortar' ? 'aislar' : 'apagar')}>
-                {accion ? <Loader2 className="animate-spin" /> : <Unplug />} Provocar falla
-              </Button>
-              <Button variant="outline" disabled={accion || nodo?.en_linea} onClick={() => provocar(tipo === 'cortar' ? 'reconectar' : 'encender')}>
-                <RefreshCw /> Restaurar nodo
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <p className="text-sm">La falla se provoca en el propio servidor de la sucursal, como pasaría en la realidad: portal de Azure → <b>{nodo?.servidor}</b> → <b>Ejecutar comando</b> → RunShellScript.</p>
+          <div className="flex flex-wrap gap-2">
+            <Button disabled={accion || !nodo?.en_linea} onClick={() => provocar(tipo === 'cortar' ? 'aislar' : 'apagar')}>
+              {accion ? <Loader2 className="animate-spin" /> : tipo === 'cortar' ? <Unplug /> : <Power />}
+              {tipo === 'cortar' ? 'Cortar el enlace WAN' : 'Apagar el servidor'}
+            </Button>
+            <Button variant="outline" disabled={accion || nodo?.en_linea} onClick={() => provocar(tipo === 'cortar' ? 'reconectar' : 'encender')}>
+              <RefreshCw /> Restaurar
+            </Button>
+          </div>
+          {!desdePanel && comandos.data && (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">
+                El panel ejecuta el comando en el servidor de la sucursal. Equivalente manual: portal de Azure → <b>{nodo?.servidor}</b> → <b>Ejecutar comando</b> → RunShellScript.
+              </p>
               <div className="grid gap-3 sm:grid-cols-2">
-                <BloqueSql titulo="Provocar la falla" nota="bash" sql={falla} />
-                <BloqueSql titulo="Restaurar" nota="bash" sql={vuelta} />
+                <BloqueSql titulo="Provocar la falla" nota="bash" abierto={false} sql={falla} />
+                <BloqueSql titulo="Restaurar" nota="bash" abierto={false} sql={vuelta} />
               </div>
             </div>
           )}

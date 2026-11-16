@@ -38,7 +38,7 @@ export default function Traspasos() {
   const caidos = [nodoDe(origen), nodoDe(destino)].filter((n) => n && !n.en_linea)
   const mismo = alm(origen)?.nodo === alm(destino)?.nodo
   const bloqueo = mismo ? 'El origen y el destino son de la misma sucursal: un traspaso es entre sucursales distintas.'
-    : caidos.length ? `${caidos.map((n) => n!.nodo).join(' y ')} sin conexión. El 2PC necesita el voto de ambas sucursales, así que el traspaso no se permite. Las ventas locales de esa sucursal siguen permitidas (autonomía local).`
+    : caidos.length ? `${caidos.map((n) => `${n!.nodo} (${n!.estado.toLowerCase()})`).join(' y ')}. El 2PC necesita el voto de ambas sucursales por la red nacional, así que el traspaso no se permite. Si la sucursal solo perdió el enlace, sus ventas locales siguen permitidas (autonomía local).`
       : null
 
   const stock = useQuery({
@@ -176,7 +176,7 @@ export default function Traspasos() {
             <div className="space-y-3">
               <div className="flex justify-between text-sm"><Label>Pausa después de cada PREPARE</Label><span className="tabular-nums text-muted-foreground">{pausa} s</span></div>
               <Slider min={0} max={30} step={1} value={[pausa]} onValueChange={(v) => setPausa(Array.isArray(v) ? v[0] : v)} />
-              <p className="text-xs text-muted-foreground">Da tiempo para cortar el enlace de una sucursal a mitad del protocolo (portal de Azure → vm-xx → Ejecutar comando → <code>tailscale down</code>) y ver cómo se revierte en ambas.</p>
+              <p className="text-xs text-muted-foreground">Da tiempo para cortar el enlace WAN de la sucursal de destino a mitad del protocolo (en otra pestaña: Simulación de fallas → Cortar el enlace WAN) y ver cómo se revierte en ambas.</p>
             </div>
             <Button size="lg" disabled={!!bloqueo || !ids.length || corriendo} onClick={ejecutar}>
               {corriendo ? <Loader2 className="animate-spin" /> : <ArrowRight />} Ejecutar traspaso
