@@ -144,8 +144,8 @@ streamlit run dashboard/app.py   # http://localhost:8501
 |---|---|
 | Panorama nacional | Estado de los 6 nodos, ventas por departamento y diseño de distribución |
 | Consultas distribuidas | Consultas C1–C8 desde La Paz; el plan `EXPLAIN` muestra qué fragmentos se consultaron |
-| Venta local | Transacción 100 % local, que funciona con el nodo aislado |
-| Traspaso 2PC | Fases del protocolo paso a paso, stock antes y después y registro de decisiones |
+| Sucursales (N1 a N6) | Una página por nodo, leída de su propia base: solo sus ventas, su inventario y su copia del catálogo; venta real eligiendo cliente, productos y cantidades (transacción 100 % local) |
+| Traspaso 2PC | Varios productos en una sola transacción; fases del protocolo, stock de origen, destino y nacional antes y después; bloqueado si una de las dos sucursales está sin conexión |
 | Replicación del catálogo | Cambio de precio en La Paz y su propagación en vivo a cada nodo |
 | Simulación de fallas | Cortar el enlace o apagar el servidor de un nodo y verificar consultas y ventas |
 | Recuperación 2PC | Hacer caer el coordinador a mitad del traspaso y resolver las transacciones en duda |
@@ -173,7 +173,7 @@ python gestion.py encender be    # vuelve y la réplica del catálogo se pone al
 ```powershell
 python -m pruebas.ejecutar_pruebas          # todos los casos
 python -m pruebas.ejecutar_pruebas P7 P10   # casos concretos
-python -m pruebas.test_panel                # el panel: 7 páginas, 8 consultas, fallas y recuperación
+python -m pruebas.test_panel                # el panel: páginas, 8 consultas, fallas y recuperación
 ```
 
 GitHub Actions (`.github/workflows/pruebas.yml`) levanta los 6 nodos y corre ambas suites en cada *push* y

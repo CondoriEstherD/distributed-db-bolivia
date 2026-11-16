@@ -97,7 +97,7 @@ def mostrar(cod):
 
     a, b, c, d = st.columns(4)
     a.metric("Ventas de la sucursal", comun.miles(resumen.ventas.sum()), border=True)
-    b.metric("Total vendido", f"Bs {resumen.total_bs.sum():,.0f}", border=True)
+    b.metric("Total vendido", f"Bs {comun.miles(resumen.total_bs.sum())}", border=True)
     c.metric("Unidades en sus almacenes", comun.miles(inventario.stock_actual.sum()), border=True)
     d.metric("Productos bajo el mínimo", int((inventario.stock_actual < inventario.stock_minimo).sum()),
              border=True, help="Filas de inventario con stock_actual < stock_minimo.")
