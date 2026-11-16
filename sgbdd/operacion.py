@@ -5,6 +5,7 @@ Compartido por gestion.py (consola), el panel Streamlit y las pruebas.
 import re
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import psycopg
 
@@ -258,31 +259,34 @@ def verificar_red():
 
 # ------------------------------------------------------------------ estado
 def estado_nodos():
-    filas = []
-    for nodo in NODOS.values():
-        fila = {"cod": nodo.cod, "nodo": str(nodo), "contenedor": nodo.contenedor, "estado": "SIN CONEXIÓN", "direccion": f"{nodo.host}:{nodo.port}",
-                "en_linea": False, "ventas": None, "2pc_pendientes": None, "replicacion": None}
-        try:
-            with conectar(nodo, "fdw_lector", autocommit=True) as c:
-                ventas, pendientes = c.execute(
-                    """SELECT (SELECT count(*) FROM ventas),
-                              (SELECT count(*) FROM pg_prepared_xacts WHERE database = current_database())"""
-                ).fetchone()
-                if nodo.cod == "lp":
-                    slots = c.execute("""SELECT count(*) FILTER (WHERE active), count(*)
-                                         FROM pg_replication_slots""").fetchone()
-                    replicacion = f"publicador: {slots[0]}/{slots[1]} suscriptores conectados"
-                else:
-                    sub = c.execute("""SELECT pid IS NOT NULL, latest_end_time FROM pg_stat_subscription
-                                       WHERE subname LIKE 'sub_catalogo_%' LIMIT 1""").fetchone()
-                    replicacion = ("sin suscripción" if sub is None
-                                   else "suscripción activa" if sub[0] else "suscripción detenida")
-            fila.update(en_linea=True, estado="EN LÍNEA", ventas=ventas, **{"2pc_pendientes": pendientes}, replicacion=replicacion)
-        except psycopg.Error as e:
-            fila["replicacion"] = f"sin conexión ({e.__class__.__name__})"
-        if nodo.local and apagado(nodo):
-            fila.update(estado="APAGADO", replicacion="servidor detenido")
-        elif MODO == "lab" and nodo.local and aislado(nodo):
-            fila.update(estado="AISLADO", replicacion="AISLADO de la WAN")
-        filas.append(fila)
-    return filas
+    """Estado de los 6 nodos, consultados en paralelo (en la WAN cada uno tarda ~1 s)."""
+    with ThreadPoolExecutor(max_workers=len(NODOS)) as ex:
+        return list(ex.map(_estado_nodo, NODOS.values()))
+
+
+def _estado_nodo(nodo):
+    fila = {"cod": nodo.cod, "nodo": str(nodo), "contenedor": nodo.contenedor, "estado": "SIN CONEXIÓN", "direccion": f"{nodo.host}:{nodo.port}",
+            "en_linea": False, "ventas": None, "2pc_pendientes": None, "replicacion": None}
+    try:
+        with conectar(nodo, "fdw_lector", autocommit=True) as c:
+            ventas, pendientes = c.execute(
+                """SELECT (SELECT count(*) FROM ventas),
+                          (SELECT count(*) FROM pg_prepared_xacts WHERE database = current_database())"""
+            ).fetchone()
+            if nodo.cod == "lp":
+                slots = c.execute("""SELECT count(*) FILTER (WHERE active), count(*)
+                                     FROM pg_replication_slots""").fetchone()
+                replicacion = f"publicador: {slots[0]}/{slots[1]} suscriptores conectados"
+            else:
+                sub = c.execute("""SELECT pid IS NOT NULL, latest_end_time FROM pg_stat_subscription
+                                   WHERE subname LIKE 'sub_catalogo_%' LIMIT 1""").fetchone()
+                replicacion = ("sin suscripción" if sub is None
+                               else "suscripción activa" if sub[0] else "suscripción detenida")
+        fila.update(en_linea=True, estado="EN LÍNEA", ventas=ventas, **{"2pc_pendientes": pendientes}, replicacion=replicacion)
+    except psycopg.Error as e:
+        fila["replicacion"] = f"sin conexión ({e.__class__.__name__})"
+    if nodo.local and apagado(nodo):
+        fila.update(estado="APAGADO", replicacion="servidor detenido")
+    elif MODO == "lab" and nodo.local and aislado(nodo):
+        fila.update(estado="AISLADO", replicacion="AISLADO de la WAN")
+    return fila
