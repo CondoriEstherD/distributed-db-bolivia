@@ -73,6 +73,12 @@ for cod in "${NODOS[@]}"; do
 done
 
 paso ".env común (contraseñas en $ENV_LOCAL)"
+# La Cloud Shell sin almacenamiento borra $HOME al cerrar: si ya hubo un despliegue, las contraseñas
+# se recuperan del .env de vm-lp (las bases ya se crearon con ellas y no deben cambiar).
+if [ ! -f "$ENV_LOCAL" ]; then
+    en_vm lp "cat /home/azureuser/sgbdd/.env 2>/dev/null" | grep -E '^[A-Z_]+=' > "$ENV_LOCAL" || true
+    grep -q '^PG_PASSWORD=' "$ENV_LOCAL" && echo "  contraseñas recuperadas de vm-lp" || rm -f "$ENV_LOCAL"
+fi
 if [ ! -f "$ENV_LOCAL" ]; then
     clave() { openssl rand -hex 12; }
     cat > "$ENV_LOCAL" <<EOF
