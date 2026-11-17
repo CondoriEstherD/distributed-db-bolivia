@@ -14,6 +14,38 @@ opera, cada uno con su papel:
 `"action": "accept"` (si está en `check`, cada pocas horas pide abrir un enlace y los comandos se
 quedan esperando).
 
+## 0 · Usar el sistema desde otra laptop
+
+Las bases de datos están en Azure, no en ninguna laptop. Cualquier laptop puede ser **consola**:
+solo necesita entrar a la red privada (Tailscale) y tener la configuración común (`.env`). Varias
+consolas pueden trabajar a la vez: todas ven y modifican las mismas bases.
+
+**Una sola vez, en cada laptop:**
+
+1. Instalar **Git**, **Python 3.12 o superior** y **Tailscale**. No hace falta Node ni Docker.
+2. Entrar a Tailscale con la **cuenta del grupo**, la misma con la que se crearon las VMs. Así la
+   laptop queda en la misma red y puede usar el SSH de Tailscale hacia las VMs.
+   (Alternativa: invitar la cuenta de cada integrante desde la consola de Tailscale, pero entonces
+   hay que etiquetar las VMs y permitir el SSH a esa etiqueta en la ACL.)
+3. Clonar el proyecto y crear su entorno:
+   ```powershell
+   git clone https://github.com/CondoriEstherD/distributed-db-bolivia.git sgbdd
+   cd sgbdd
+   python -m venv .venv
+   .\.venv\Scripts\pip install -r requirements.txt
+   ```
+4. Copiar el **`.env`** común de la consola principal, por un medio privado (USB o mensaje directo,
+   **nunca** por GitHub). Trae las IP de Tailscale de las 6 VMs, las contraseñas de los roles y las
+   de las sucursales. Debe tener `MODO=red` y `NODOS_LOCALES=` vacío.
+5. Comprobar: `.\.venv\Scripts\python.exe gestion.py estado` → los 6 nodos EN LÍNEA.
+
+**Cada vez:** doble clic en `abrir_panel.bat` (panel en http://localhost:8000) o los comandos de
+abajo. Para actualizar el código: `git pull`.
+
+**En la defensa** se puede usar una laptop por sucursal: en una se entra como Tarija y se solicita
+un traspaso; en otra se entra como Oruro y se acepta. Las solicitudes viven en Cochabamba (Nodo 3),
+así que cada consola ve las mismas.
+
 En todos los comandos de abajo, `py` significa `.\.venv\Scripts\python.exe`:
 
 ```powershell
