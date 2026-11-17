@@ -59,23 +59,34 @@ Planes obtenidos con `EXPLAIN (VERBOSE, COSTS OFF)` desde La Paz, como `rol_anal
   Además, los participantes se bloquean siempre en orden de id de almacén, lo que evita interbloqueos
   entre traspasos cruzados SC → BE y BE → SC.
 
-## Fallas en red real
+## Fallas en red real (Azure)
 
-> Pendiente de la tarea 6B: se completa con los 7 equipos conectados por Tailscale (casos P1–P6, P8,
-> P12 y P13 con `tailscale down` y `python gestion.py apagar be` en E6). Por cada caso: acción, tiempo,
-> resultado y captura.
+**Entorno:** 6 VMs de Azure, una por nodo (La Paz, Santa Cruz y Cochabamba en Chile Central; Tarija,
+Oruro y Beni en North Central US), unidas por Tailscale, ejecutadas desde una laptop de consola el
+16/11/2026. **Resultado: 14/14 pruebas pasan.** Salida completa:
+[`evidencias/pruebas_azure.txt`](evidencias/pruebas_azure.txt).
 
-| ID | Acción en red real | Tiempo | Resultado | Evidencia |
-|---|---|---|---|---|
-| P1 | | | | |
-| P2 | | | | |
-| P3 | | | | |
-| P4 | | | | |
-| P5 | | | | |
-| P6 | | | | |
-| P8 | | | | |
-| P12 | | | | |
-| P13 | | | | |
+El corte del enlace (`aislar`) es una regla de firewall en el servidor del nodo que bloquea su base
+hacia y desde las demás sucursales; el servidor sigue accesible para su terminal local. El apagado
+(`apagar`) detiene el contenedor PostgreSQL en su VM.
+
+| ID | Acción en red real | Tiempo | Resultado |
+|---|---|---|---|
+| P1 | Aislar Beni; vender en Beni (terminal local) y en Santa Cruz | 12,4 s | Beni vendió #6000002504 sin red; Santa Cruz vendió #2000015006 |
+| P2 | Con Beni aislado, consulta nacional desde La Paz | 6,6 s | Error controlado `could not connect to server "srv_be"`, sin bloqueo |
+| P3 | Con Beni aislado, consultar solo Santa Cruz | 10,4 s | 15 006 ventas de SC sin tocar el fragmento de Beni |
+| P4 | Con Beni aislado, `resumen_nacional_disponible()` | 18,7 s | 5 fragmentos EN LÍNEA y `fv6_be` FUERA DE LÍNEA |
+| P5 | Con Beni aislado, subir un precio en La Paz | 16,0 s | Santa Cruz lo recibió en 0,6 s; Beni conservó el anterior |
+| P6 | Cambiar el precio con Beni aislado y reconectarlo | 16,3 s | Beni recibió el precio 3,0 s después de reconectarse |
+| P8 | Aislar Beni durante la pausa posterior al PREPARE de Santa Cruz | 27,8 s | ABORTADO; Santa Cruz intacto (935); 0 transacciones preparadas |
+| P12 | Aislar La Paz y vender en Santa Cruz, Cochabamba y Beni | 13,4 s | Ventas 2000015007, 3000010004 y 6000002505 |
+| P13 | Apagar el servidor de Beni, vender en SC, cambiar un precio y encenderlo | 29,9 s | SC vendió; `fv6_be` FUERA DE LÍNEA; Beni recibió el precio pendiente en 2,0 s |
+
+**Diferencias con el laboratorio.** Los tiempos son mayores por la latencia real Chile ↔ EE. UU.: la
+detección de un nodo caído (P2) pasa de 4,2 s a unos 6,6 s, y en P10 se confirman menos traspasos
+concurrentes (2 de 20) porque los bloqueos se sostienen más tiempo y varios votan NO por el
+`lock_timeout`. En todos los casos el stock nunca baja de 0 y el total nacional se conserva: ante la
+duda, el sistema rechaza en lugar de arriesgar una inconsistencia.
 
 ## Latencia del enlace de Beni
 

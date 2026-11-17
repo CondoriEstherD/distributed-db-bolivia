@@ -3,7 +3,7 @@
 # Se ejecuta en la Cloud Shell (Bash) del portal de Azure, que ya tiene la sesión iniciada:
 #
 #   git clone https://github.com/CondoriEstherD/distributed-db-bolivia.git sgbdd
-#   TS_AUTHKEY=tskey-auth-... REGION=westus2 SIZE=Standard_D2als_v6 bash sgbdd/docker/vps/azure_desplegar.sh
+#   TS_AUTHKEY=tskey-auth-... REGION=chilecentral SIZE=Standard_B2ats_v2 bash sgbdd/docker/vps/azure_desplegar.sh
 #
 # Opcional: REGION_TJ=eastus2 (etc.) pone ese nodo en otra región si se agota la cuota de vCPU.
 # Azure for Students: 6 vCPU por región y pocas regiones permitidas. Con B2ats_v2 (2 vCPU) caben
@@ -124,13 +124,13 @@ gestion lp configurar
 gestion lp estado
 
 paso "Panel en vm-lp"
-en_vm lp "systemctl enable --now sgbdd-panel@azureuser && (tailscale funnel --bg 8501 >/dev/null 2>&1; tailscale funnel status || true)"
+en_vm lp "systemctl enable --now sgbdd-panel@azureuser && (tailscale funnel --bg 8000 >/dev/null 2>&1; tailscale funnel status || true)"
 
 cat <<EOF
 
 ✔ Despliegue terminado.
-  Panel:       la URL https://vm-lp.<red>.ts.net de arriba (clave: PANEL_CLAVE en $ENV_LOCAL).
-               Si no aparece, active Funnel en la consola de Tailscale (docs/DESPLIEGUE_VPS.md §6).
+  Panel:       la URL https://vm-lp.<red>.ts.net de arriba (claves de las sucursales: CLAVE_XX en $ENV_LOCAL).
+               Si no aparece, active Funnel en la consola de Tailscale (docs/DESPLIEGUE_AZURE.md).
   Consola:     ssh azureuser@vm-lp   (desde un equipo de la red Tailscale)
   Apagar todo: az vm deallocate --ids \$(az vm list -g $RG --query [].id -o tsv)
   Encender:    az vm start --ids \$(az vm list -g $RG --query [].id -o tsv)

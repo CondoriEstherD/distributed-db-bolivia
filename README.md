@@ -4,14 +4,16 @@
 
 **Sistema de Base de Datos Distribuida para la gestión logística nacional**
 
-Seis nodos PostgreSQL 16 (un contenedor por nodo) con fragmentación horizontal, derivada y vertical,
-replicación lógica, transparencia de distribución y transacciones distribuidas con compromiso en dos fases.
+Seis servidores PostgreSQL 16, uno por región, forman una sola base de datos lógica: fragmentación
+horizontal y vertical, replicación del catálogo, consultas transparentes y traspasos entre sucursales
+con compromiso en dos fases (2PC).
 
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
-![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)
-![Streamlit](https://img.shields.io/badge/Streamlit-panel-FF4B4B?logo=streamlit&logoColor=white)
+![Azure](https://img.shields.io/badge/Azure-6%20VMs-0078D4?logo=microsoftazure&logoColor=white)
 ![Tailscale](https://img.shields.io/badge/Tailscale-red%20privada-242424?logo=tailscale&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-panel-61DAFB?logo=react&logoColor=black)
 [![Pruebas](https://github.com/CondoriEstherD/distributed-db-bolivia/actions/workflows/pruebas.yml/badge.svg)](https://github.com/CondoriEstherD/distributed-db-bolivia/actions/workflows/pruebas.yml)
 
 </div>
@@ -20,374 +22,371 @@ replicación lógica, transparencia de distribución y transacciones distribuida
 
 ## Contenido
 
-1. [Descripción](#1-descripción)
-2. [Arquitectura](#2-arquitectura)
-3. [Diseño de distribución](#3-diseño-de-distribución)
-4. [Tecnologías](#4-tecnologías)
-5. [Inicio rápido](#5-inicio-rápido)
-6. [Demostración](#6-demostración)
-7. [Pruebas](#7-pruebas)
-8. [Operación](#8-operación)
-9. [Despliegue en varios equipos](#9-despliegue-en-varios-equipos)
-10. [Estructura del repositorio](#10-estructura-del-repositorio)
-11. [Solución de problemas](#11-solución-de-problemas)
-12. [Documentación](#12-documentación)
+- [Qué hace el sistema](#qué-hace-el-sistema)
+- [Arquitectura](#arquitectura)
+- [Diseño de distribución](#diseño-de-distribución)
+- [Tecnologías](#tecnologías)
+- [Preparar una laptop](#preparar-una-laptop) ← **empiece aquí**
+- [Uso diario](#uso-diario)
+- [El panel web](#el-panel-web)
+- [La terminal](#la-terminal)
+- [Pruebas](#pruebas)
+- [Despliegue](#despliegue)
+- [Estructura del repositorio](#estructura-del-repositorio)
+- [Solución de problemas](#solución-de-problemas)
+- [Documentación](#documentación)
 
 ---
 
-## 1. Descripción
+## Qué hace el sistema
 
-BoliviaDistribución S.A. opera sucursales en los nueve departamentos del país. Cada sucursal debe
-**vender aunque pierda la conexión con la oficina central**, mientras que la gerencia en La Paz necesita
-**consultas nacionales como si existiera una sola base de datos**.
+BoliviaDistribución S.A. es una distribuidora de **cosméticos y cuidado personal** con sucursales en
+los nueve departamentos. El sistema cumple dos requisitos que se contradicen en una base centralizada:
 
-El sistema resuelve ese requisito con un diseño distribuido descendente (Özsu y Valduriez, 2020):
+- **Cada sucursal vende aunque pierda la conexión** con las demás (autonomía local).
+- **La oficina central de La Paz consulta todo el país** como si fuera una sola base (transparencia).
 
-- Cada nodo guarda solo los datos de sus departamentos (**autonomía local**).
-- La Paz ve todos los fragmentos mediante un esquema global (**transparencia**).
-- El catálogo se replica de forma asíncrona (**disponibilidad**).
-- Los traspasos de inventario entre nodos usan 2PC (**consistencia**).
+| Funcionalidad | Cómo se logra |
+|---|---|
+| Cada sucursal guarda solo sus ventas, clientes e inventario | Fragmentación horizontal por departamento (y derivada para detalles e inventario) |
+| Los datos de crédito de los clientes solo existen en La Paz | Fragmentación vertical: FC1 (datos generales) en cada sucursal, FC2 (financieros) solo en La Paz |
+| Mismos productos y precios en todas las sucursales | Replicación lógica del catálogo desde La Paz |
+| `SELECT * FROM ventas_nacionales` sin saber dónde están los datos | Esquema `nacional` con particiones remotas (`postgres_fdw`) |
+| Mover mercadería entre sucursales sin perderla ni duplicarla | Solicitud del origen, aceptación del destino y **2PC** entre las dos bases |
+| Si una sucursal cae, las demás siguen | Tiempos límite, consulta tolerante a fallos y recuperación del 2PC |
 
-## 2. Arquitectura
+## Arquitectura
 
 ```mermaid
 flowchart TB
-    subgraph LP["Nodo 1 · La Paz (central) :15431"]
-        direction TB
-        N["Esquema «nacional»<br/>tablas particionadas + postgres_fdw"]
-        FC2[("FC2 clientes_financiero")]
-        PUB[["pub_catalogo"]]
+    subgraph CL["Azure · Chile Central"]
+        LP["vm-lp · Nodo 1 La Paz<br/>central: esquema nacional, FC2,<br/>maestro del catálogo"]
+        SC["vm-sc · Nodo 2<br/>Santa Cruz"]
+        CB["vm-cb · Nodo 3 Cochabamba<br/>hub de traspasos:<br/>solicitudes y registro 2PC"]
     end
+    subgraph US["Azure · North Central US"]
+        TJ["vm-tj · Nodo 4<br/>Tarija + Chuquisaca"]
+        OR["vm-or · Nodo 5<br/>Oruro + Potosí"]
+        BE["vm-be · Nodo 6<br/>Beni + Pando"]
+    end
+    T(("Tailscale<br/>red privada cifrada"))
+    LP & SC & CB --- T
+    TJ & OR & BE --- T
+    T --- L1["Laptop de consola<br/>panel · terminal · coordinador 2PC"]
+    T --- L2["Otra laptop de consola"]
 
-    SC["Nodo 2 · Santa Cruz<br/>:15432"]
-    CB["Nodo 3 · Cochabamba<br/>:15433<br/>traspasos_log (2PC)"]
-    TJ["Nodo 4 · Tarija + Chuquisaca<br/>:15434"]
-    OR["Nodo 5 · Oruro + Potosí<br/>:15435"]
-    BE["Nodo 6 · Beni + Pando<br/>:15436"]
-
-    PUB -. "replicación lógica<br/>(catálogo)" .-> SC & CB & TJ & OR & BE
-    N -- "consultas remotas<br/>(postgres_fdw)" --> SC & CB & TJ & OR & BE
-
-    COORD{{"Coordinador 2PC<br/>(Python · psycopg 3)"}}
-    COORD -- "PREPARE / COMMIT PREPARED" --> SC & BE
-    COORD -- "registro de decisiones" --> CB
-
-    UI["Panel Streamlit"] --> N
-    UI --> COORD
+    LP -. "replicación del catálogo" .-> SC & CB & TJ & OR & BE
 ```
 
-| Nodo | Contenedor | Departamentos | Puerto | Ventas de prueba |
+| Nodo | Servidor | Departamentos | Puerto | Ventas de prueba |
 |---|---|---|---|---:|
-| 1 · Central | `nodo1_lp` | La Paz | 15431 | 12 500 |
-| 2 | `nodo2_sc` | Santa Cruz | 15432 | 15 000 |
-| 3 | `nodo3_cb` | Cochabamba | 15433 | 10 000 |
-| 4 | `nodo4_tj` | Tarija, Chuquisaca | 15434 | 5 000 |
-| 5 | `nodo5_or` | Oruro, Potosí | 15435 | 5 000 |
-| 6 | `nodo6_be` | Beni, Pando | 15436 | 2 500 |
+| 1 · Central | `vm-lp` | La Paz | 15431 | 12 500 |
+| 2 | `vm-sc` | Santa Cruz | 15432 | 15 000 |
+| 3 · Hub de traspasos | `vm-cb` | Cochabamba | 15433 | 10 000 |
+| 4 | `vm-tj` | Tarija, Chuquisaca | 15434 | 5 000 |
+| 5 | `vm-or` | Oruro, Potosí | 15435 | 5 000 |
+| 6 | `vm-be` | Beni, Pando | 15436 | 2 500 |
 | | | | **Total** | **50 000** |
 
-## 3. Diseño de distribución
+Cada servidor ejecuta un contenedor Docker con PostgreSQL 16. Ninguno expone puertos a internet: solo
+se alcanzan dentro de la red Tailscale. Las **laptops no guardan datos**: son consolas que se conectan
+a los servidores, y pueden trabajar varias a la vez.
+
+## Diseño de distribución
 
 | Técnica | Relación | Implementación |
 |---|---|---|
-| Fragmentación horizontal primaria | `ventas`, `almacenes` | Predicado `departamento_id IN (…)` por nodo, garantizado con `CHECK` |
+| Fragmentación horizontal primaria | `ventas`, `almacenes`, `clientes_datos_generales` | Predicado `departamento_id IN (…)` por nodo, garantizado con `CHECK` |
 | Fragmentación horizontal derivada | `detalle_venta ⋉ ventas`, `inventario ⋉ almacenes` | Cada detalle vive en el nodo de su venta o almacén |
 | Fragmentación vertical | `clientes` | FC1 `clientes_datos_generales` (nodos 1–6) · FC2 `clientes_financiero` (solo La Paz) |
-| Replicación total | `productos_catalogo` | Publicación en La Paz, suscripción en nodos 2–6 |
+| Replicación total | `productos_catalogo` | Publicación en La Paz, suscripción en los nodos 2–6 |
 | Identificadores globales | todas | Rango por nodo: `nodo × 10⁹ + n` (ventas, clientes) y `nodo × 100 + k` (almacenes) |
 | Transparencia | esquema `nacional` | `PARTITION BY LIST` con particiones remotas: poda de fragmentos y agregación en cada nodo |
-| Transacciones distribuidas | `inventario` | 2PC con registro en Cochabamba, orden fijo de bloqueos y recuperación por presunción de aborto |
-| Seguridad | todas | Matriz CRUD con `GRANT/REVOKE`, mínimo privilegio, SCRAM, solo redes privadas |
+| Transacciones distribuidas | `inventario` | Aprobación de dos encargados + 2PC con registro en Cochabamba, orden fijo de bloqueos y recuperación por presunción de aborto |
+| Seguridad | todas | Matriz CRUD con `GRANT/REVOKE`, mínimo privilegio, SCRAM, solo red privada; panel con contraseña por sucursal |
 
-Las reglas de corrección de la fragmentación (completitud, reconstrucción y disyunción) se verifican
-automáticamente en la prueba P0.
-
-## 4. Tecnologías
+## Tecnologías
 
 | Capa | Herramienta | Uso |
 |---|---|---|
-| Motor | PostgreSQL 16 | `postgres_fdw`, replicación lógica, `PREPARE TRANSACTION`, particionamiento |
-| Infraestructura | Docker Compose | Un contenedor por nodo, red `sgbdd_wan` |
-| Red entre equipos | Tailscale (gratuito) | Red privada cifrada sin exponer puertos a Internet |
-| Coordinación | Python 3.12 + psycopg 3 | Coordinador 2PC, recuperación, consola de operación |
-| Interfaz | Streamlit | Panel de demostración: cada acción muestra su SQL |
-| Administración (opcional) | pgAdmin 4 | Exploración visual de los nodos |
+| Base de datos | PostgreSQL 16 | `postgres_fdw`, replicación lógica, `PREPARE TRANSACTION`, particionamiento |
+| Servidores | Azure (6 VMs Ubuntu 24.04) + Docker | Un servidor y un contenedor por nodo |
+| Red | Tailscale | Red privada cifrada entre los servidores y las laptops |
+| Lógica distribuida | Python 3.12 + psycopg 3 | Coordinador 2PC, recuperación, operación de nodos |
+| API | FastAPI + Uvicorn | Expone las operaciones al panel; cada respuesta incluye el SQL ejecutado |
+| Panel | React + TypeScript + Tailwind + shadcn/ui | Punto de venta por sucursal y administración central |
 
-## 5. Inicio rápido
+---
 
-**Requisitos:** Docker Desktop (en Windows, con WSL2) y Python 3.12 o superior.
+## Preparar una laptop
+
+Cada integrante prepara su laptop **una sola vez**. Al terminar puede usar el panel y la terminal
+contra los servidores de Azure. No hace falta instalar Docker ni Node.
+
+### 1. Instalar los programas
+
+| Programa | Dónde | Detalle |
+|---|---|---|
+| **Git** | https://git-scm.com/download/win | Instalación por defecto |
+| **Python 3.12 o superior** | https://www.python.org/downloads/ | En el instalador, marque **«Add python.exe to PATH»** |
+| **Tailscale** | https://tailscale.com/download/windows | Inicie sesión con la **cuenta del grupo** (la misma de los servidores) |
+
+Compruebe en PowerShell:
 
 ```powershell
-git clone https://github.com/CondoriEstherD/distributed-db-bolivia.git
-cd distributed-db-bolivia
-
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-
-python gestion.py levantar      # crea .env, levanta los 6 nodos y carga los datos (1-3 min la primera vez)
-python gestion.py configurar    # suscripciones al catálogo + esquema «nacional» en La Paz
-python gestion.py estado        # salud, volumen y replicación de cada nodo
+git --version
+python --version          # 3.12 o superior
+tailscale status          # debe listar vm-lp, vm-sc, vm-cb, vm-tj, vm-or y vm-be
 ```
 
 > [!IMPORTANT]
-> Cambie `PG_PASSWORD` y las contraseñas `PASS_*` de cada rol en `.env` antes de cualquier despliegue en red.
-> El archivo `.env` está excluido del repositorio.
+> Todos deben usar la **misma cuenta de Tailscale del grupo**. Con otra cuenta, la laptop no ve los
+> servidores o no puede entrar a ellos para provocar fallas.
 
-## 6. Demostración
-
-```powershell
-streamlit run dashboard/app.py   # http://localhost:8501
-```
-
-| Página | Qué demuestra |
-|---|---|
-| Panorama nacional | Estado de los 6 nodos, ventas por departamento y diseño de distribución |
-| Consultas distribuidas | Consultas C1–C8 desde La Paz; el plan `EXPLAIN` muestra qué fragmentos se consultaron |
-| Sucursales (N1 a N6) | Una página por nodo, leída de su propia base: solo sus ventas, su inventario y su copia del catálogo; venta real eligiendo cliente, productos y cantidades (transacción 100 % local) |
-| Traspaso 2PC | Varios productos en una sola transacción; fases del protocolo, stock de origen, destino y nacional antes y después; bloqueado si una de las dos sucursales está sin conexión |
-| Replicación del catálogo | Cambio de precio en La Paz y su propagación en vivo a cada nodo |
-| Simulación de fallas | Cortar el enlace o apagar el servidor de un nodo y verificar consultas y ventas |
-| Recuperación 2PC | Hacer caer el coordinador a mitad del traspaso y resolver las transacciones en duda |
-
-### Cómo probar la caída de un nodo
-
-**Desde el panel:** página *Simulación de fallas* → elegir el nodo y el tipo de falla → **Provocar falla** →
-pulsar **Probar** en cada verificación → **Restaurar nodo**.
-
-**Desde la consola:**
+### 2. Descargar el proyecto
 
 ```powershell
-python gestion.py aislar be      # caída del ENLACE: Beni sigue vendiendo localmente
-python gestion.py vender be      # funciona (autonomía local)
-python gestion.py sql lp "SELECT * FROM nacional.resumen_nacional_disponible()"   # informa fv6_be FUERA DE LÍNEA
-python gestion.py reconectar be
-
-python gestion.py apagar be      # caída TOTAL del servidor: Beni no atiende ni localmente
-python gestion.py vender sc      # los demás nodos siguen vendiendo
-python gestion.py encender be    # vuelve y la réplica del catálogo se pone al día sola
+cd $HOME\Documents
+git clone https://github.com/CondoriEstherD/distributed-db-bolivia.git sgbdd
+cd sgbdd
+python -m venv .venv
+.\.venv\Scripts\pip install -r requirements.txt
 ```
 
-## 7. Pruebas
+### 3. Copiar la configuración (`.env`)
+
+El archivo `.env` tiene las direcciones de los 6 servidores y **todas las contraseñas**. No está en
+GitHub: pídalo a la persona que hizo el despliegue y cópielo en la carpeta `sgbdd`.
+
+> [!CAUTION]
+> Pase el `.env` por USB o mensaje privado, **nunca** por GitHub ni por un grupo público.
+
+Revise que tenga estas líneas (las IP son ejemplos):
+
+```ini
+MODO=red
+NODOS_LOCALES=                 # vacío: la laptop no aloja nodos
+HOST_LP=100.x.y.z              # … y HOST_SC, HOST_CB, HOST_TJ, HOST_OR, HOST_BE
+CLAVE_LP=…                     # contraseñas del panel: CLAVE_LP … CLAVE_BE
+```
+
+### 4. Comprobar
 
 ```powershell
-python -m pruebas.ejecutar_pruebas          # todos los casos
-python -m pruebas.ejecutar_pruebas P7 P10   # casos concretos
-python -m pruebas.test_panel                # el panel: páginas, 8 consultas, fallas y recuperación
+.\.venv\Scripts\python.exe gestion.py estado
 ```
 
-GitHub Actions (`.github/workflows/pruebas.yml`) levanta los 6 nodos y corre ambas suites en cada *push* y
-*Pull Request* a `main`; si algo falla, guarda los registros de los nodos como *artifact*.
+Los 6 nodos deben aparecer **EN LÍNEA**. Si aparecen SIN CONEXIÓN, las VMs están apagadas (ver
+[Uso diario](#uso-diario)).
 
-En modo `lab` corren los 14 casos. En modo `red` (desde el equipo de consola) corren P0, P7, P9, P10 y
-P11; los casos de fallas se demuestran cortando el enlace real del equipo (ver sección 9).
+### 5. Abrir el panel
 
-| Caso | Escenario | Resultado medido |
+Doble clic en **`abrir_panel.bat`**. Se abre el navegador en http://localhost:8000: elija su sucursal
+y escriba su contraseña. No cierre la ventana negra mientras use el panel.
+
+Para recibir las mejoras del proyecto, ejecute `git pull` en la carpeta `sgbdd` antes de trabajar.
+
+<details>
+<summary><b>macOS o Linux</b></summary>
+
+Los comandos son los mismos cambiando `.\.venv\Scripts\python.exe` por `.venv/bin/python`. En lugar
+de `abrir_panel.bat`:
+
+```bash
+.venv/bin/python -m uvicorn api.main:app --port 8000
+```
+
+</details>
+
+---
+
+## Uso diario
+
+1. **Encender los servidores** (una persona, en la Cloud Shell del portal de Azure, Bash):
+   ```bash
+   az vm start --ids $(az vm list -g rg-sgbdd --query [].id -o tsv)
+   ```
+2. **Comprobar** desde cualquier laptop: `.\.venv\Scripts\python.exe gestion.py estado`.
+3. **Trabajar** con el panel (`abrir_panel.bat`) o la terminal.
+4. **Al terminar**: dejar todo en orden y **apagar los servidores** (no cobran mientras están apagados):
+   ```powershell
+   .\.venv\Scripts\python.exe gestion.py restablecer
+   ```
+   ```bash
+   az vm deallocate --ids $(az vm list -g rg-sgbdd --query [].id -o tsv)
+   ```
+
+> [!WARNING]
+> Las VMs de Chile Central no se apagan solas. Si quedan encendidas, consumen el crédito de Azure.
+
+---
+
+## El panel web
+
+**Ingreso:** cada sucursal entra con su propia contraseña (`CLAVE_XX` del `.env`) y solo ve sus datos.
+**La Paz** entra además a la **administración central**.
+
+| Sucursal | Qué se hace | Qué demuestra |
 |---|---|---|
-| P0 | Reglas de corrección de la fragmentación | 50 000 ventas en 9 departamentos, sin duplicados |
-| P1 | Autonomía local con Beni aislado | Beni sigue registrando ventas |
-| P2 | Consulta global con un nodo caído | Error controlado en 4,2 s |
-| P3 | Eliminación de fragmentos con un nodo caído | Las consultas que no lo requieren siguen funcionando |
-| P4 | Consulta tolerante a fallos | Resumen parcial que indica el fragmento caído |
-| P5 | Consistencia eventual del catálogo | Propagación en 0,5 s |
-| P6 | Sincronización diferida al reconectar | Beni se pone al día 5,1 s después de reconectarse |
-| P7 | Traspaso 2PC exitoso SC → BE | Confirmado en ambos nodos |
-| P8 | Caída del destino durante el 2PC | Rollback: el origen queda intacto |
-| P9 | Caída del coordinador | La recuperación confirma o deshace según el registro |
-| P10 | 20 traspasos simultáneos sobre 100 unidades | 10 confirmados, stock nunca negativo, total nacional conservado |
-| P11 | Seguridad: matriz CRUD y contraseña por rol | 5/5 accesos prohibidos rechazados por el gestor |
-| P12 | Caída del nodo central | Los demás nodos siguen vendiendo |
-| P13 | Caída total de Beni (servidor apagado) | Los demás venden; al encenderlo recibe los cambios pendientes del catálogo |
+| **Vender** | Catálogo con fotos, carrito y cobro | Venta 100 % local: funciona aunque la sucursal pierda la red |
+| **Historial de ventas** | Sus ventas y el comprobante de cada una | Fragmentos FV (ventas) y FDV (detalle) de esa sucursal |
+| **Clientes** | Datos generales de sus clientes | Fragmento vertical FC1 |
+| **Inventario** | Stock de sus almacenes | Fragmento derivado FI: cada sucursal tiene su propio stock |
+| **Traspasos** | Solicitar, recibir (aceptar o rechazar) y seguir traspasos | Doble aprobación + 2PC entre dos bases |
 
-## 8. Operación
+| Administración central (La Paz) | Qué demuestra |
+|---|---|
+| **Panorama nacional** | Estado de los 6 servidores y ventas por departamento |
+| **Clientes y crédito** | Reconstrucción vertical FC1 ⋈ FC2 |
+| **Catálogo y precios** | Replicación: un precio cambiado en La Paz llega en vivo a las sucursales |
+| **Consultas distribuidas** | Transparencia y poda de fragmentos (plan de ejecución) |
+| **Auditoría de traspasos** | Registro de decisiones del 2PC y recuperación de transacciones en duda |
+| **Simulación de fallas** | Cortar la red o apagar una sucursal y comprobar qué sigue funcionando |
+
+Detalle de cada pantalla y de cómo usar varias laptops en la defensa:
+[`docs/MANUAL_OPERACION.md`](docs/MANUAL_OPERACION.md).
+
+---
+
+## La terminal
+
+Desde la carpeta del proyecto (`py` = `.\.venv\Scripts\python.exe`). Los comandos sobre un nodo se
+ejecutan en el servidor de ese nodo por SSH, como lo haría su operador.
 
 | Tarea | Comando |
 |---|---|
-| Estado de los nodos | `python gestion.py estado` |
-| Cortar el enlace WAN de un nodo (sigue operando local) | `python gestion.py aislar be` |
-| Restablecer el enlace | `python gestion.py reconectar be` |
-| Apagar el servidor de un nodo (caída total) | `python gestion.py apagar be` |
-| Volver a encender el nodo | `python gestion.py encender be` |
-| Simular un enlace lento en Beni (0 lo quita) | `python gestion.py latencia be 300` |
-| Medir el efecto de la latencia | `python -m pruebas.medir_latencia` |
-| Venta en la consola local de un nodo | `python gestion.py vender be` |
-| SQL en un nodo | `python gestion.py sql lp "SELECT * FROM nacional.resumen_nacional_disponible()"` |
-| Traspaso 2PC | `python -m sgbdd.coordinador_2pc --origen 201 --destino 601 --producto 15 --cantidad 50` |
-| Traspaso con pausa (para cortar un enlace a mitad) | añadir `--pausa 10` |
-| Resolver transacciones en duda | `python gestion.py recuperar` |
-| Respaldar un nodo (en `respaldos/`) | `python gestion.py respaldar be` |
-| Restaurar un nodo desde un respaldo | `python gestion.py restaurar be respaldos/be_20261103-1700.dump --si` |
-| pgAdmin (http://localhost:5050) | `python gestion.py levantar --admin` |
-| Borrar todo y empezar de cero | `python gestion.py reiniciar --si` |
+| Estado de los 6 nodos | `py gestion.py estado` |
+| Cortar la red de una sucursal (sigue vendiendo) | `py gestion.py aislar be` |
+| Restablecer la red | `py gestion.py reconectar be` |
+| Apagar / encender el servidor de base de datos | `py gestion.py apagar be` · `py gestion.py encender be` |
+| Dejar todo en operación normal | `py gestion.py restablecer` |
+| Venta en la terminal local de una sucursal | `py gestion.py vender be` |
+| SQL en un nodo | `py gestion.py sql lp "SELECT * FROM nacional.resumen_nacional_disponible()"` |
+| Traspaso con 2PC (protocolo de las bases) | `py -m sgbdd.coordinador_2pc --origen 201 --destino 601 --producto 15 --cantidad 5` |
+| … con pausa para cortar la red a mitad | añadir `--pausa 15` |
+| Resolver transacciones en duda | `py gestion.py recuperar --edad-minima 0` |
+| Pruebas automáticas | `py -m pruebas.ejecutar_pruebas` |
 
-Identificadores útiles: almacenes `101-102` LP, `201-202` SC, `301-302` CB, `401-404` TJ/CH,
-`501-504` OR/PO, `601-604` BE/PA. Productos: 1 a 200. Los ids de ventas y clientes empiezan con el número
-del nodo que los creó (`6000002501` → Beni).
+Guía completa con los escenarios del 2PC paso a paso: [`docs/MANUAL_OPERACION.md`](docs/MANUAL_OPERACION.md).
 
-## 9. Despliegue en varios equipos
+---
 
-Los mismos scripts funcionan en una laptop (modo `lab`) o en siete (modo `red`); solo cambia `.env`.
-En modo red cada nodo vive en su propio equipo, como una sucursal real, y un séptimo equipo actúa como
-**consola de operación**: no aloja nodos, solo se conecta a ellos.
+## Pruebas
 
-```mermaid
-flowchart LR
-    E1["E1 · La Paz<br/>nodo1_lp :15431"] --- T(("Tailscale<br/>100.64.0.0/10"))
-    E2["E2 · Santa Cruz<br/>nodo2_sc :15432"] --- T
-    E3["E3 · Cochabamba<br/>nodo3_cb :15433"] --- T
-    E4["E4 · Tarija + Chuquisaca<br/>nodo4_tj :15434"] --- T
-    T --- E5["E5 · Oruro + Potosí<br/>nodo5_or :15435"]
-    T --- E6["E6 · Beni + Pando<br/>nodo6_be :15436"]
-    T --- E7["E7 · Consola<br/>panel · coordinador 2PC · pruebas"]
+```powershell
+py -m pruebas.ejecutar_pruebas          # los 14 casos (aíslan y apagan Beni y la dejan como estaba)
+py -m pruebas.ejecutar_pruebas P7 P8    # casos concretos
 ```
 
-| Equipo | Aloja | `NODOS_LOCALES` | Necesita |
-|---|---|---|---|
-| E1 | Nodo 1 · La Paz (esquema `nacional`, FC2, publicación del catálogo) | `lp` | Docker, Python, Tailscale, puerto 15431 abierto |
-| E2 | Nodo 2 · Santa Cruz | `sc` | Docker, Python, Tailscale, puerto 15432 abierto |
-| E3 | Nodo 3 · Cochabamba (registro `traspasos_log` del 2PC) | `cb` | Docker, Python, Tailscale, puerto 15433 abierto |
-| E4 | Nodo 4 · Tarija y Chuquisaca | `tj` | Docker, Python, Tailscale, puerto 15434 abierto |
-| E5 | Nodo 5 · Oruro y Potosí | `or` | Docker, Python, Tailscale, puerto 15435 abierto |
-| E6 | Nodo 6 · Beni y Pando | `be` | Docker, Python, Tailscale, puerto 15436 abierto |
-| E7 | Consola: panel Streamlit, coordinador 2PC, recuperación y pruebas | *(vacío)* | Python y Tailscale (Docker no es necesario) |
+Resultado en Azure: **14/14** ([evidencia](docs/evidencias/pruebas_azure.txt)). GitHub Actions corre
+los mismos casos en modo laboratorio y compila el panel en cada cambio a `main`.
 
-Ventajas de la consola separada: cuando se corta el enlace de cualquier nodo (incluido La Paz), el panel
-y el coordinador siguen funcionando y muestran la falla en vivo. Además, el coordinador 2PC no comparte
-equipo con ningún participante, como en una arquitectura real.
-
-### Pasos
-
-1. **Tailscale.** Instalarlo en los 7 equipos e iniciar sesión con **una misma cuenta del grupo**
-   (el plan gratuito admite hasta 100 dispositivos). Anotar la IP de cada equipo con `tailscale ip -4`.
-2. **Repositorio.** Clonarlo en los 7 equipos (sección 5).
-3. **`.env`.** Debe ser **idéntico en los 7 equipos** (mismas contraseñas, mismas IP y puertos), salvo
-   `NODOS_LOCALES`. Ejemplo para E2:
-   ```ini
-   PG_PASSWORD=<la misma en todos>
-   PASS_CAJERO=<la misma en todos>   # y así las 7 PASS_* de .env.example
-   MODO=red
-   NODOS_LOCALES=sc          # E1=lp · E3=cb · E4=tj · E5=or · E6=be · E7 vacío
-   BIND_IP=0.0.0.0
-   HOST_LP=100.64.0.1        # IP de Tailscale de E1
-   HOST_SC=100.64.0.2        # IP de Tailscale de E2
-   HOST_CB=100.64.0.3
-   HOST_TJ=100.64.0.4
-   HOST_OR=100.64.0.5
-   HOST_BE=100.64.0.6
-   # PORT_LP … PORT_BE se mantienen: 15431 … 15436
-   ```
-4. **Firewall (E1 a E6).** Abrir solo el puerto del nodo propio, en PowerShell como administrador
-   (ejemplo para E2):
-   ```powershell
-   New-NetFirewallRule -DisplayName "SGBDD nodo" -Direction Inbound -Protocol TCP -LocalPort 15432 -Action Allow
-   ```
-5. **Levantar (E1 a E6).** `python gestion.py levantar` en cada equipo. Cada nodo carga solo sus datos.
-6. **Conectividad.** Ejecutar `python gestion.py verificar` en los 7 equipos. El comando:
-   - inicia sesión en los 6 nodos desde ese equipo;
-   - en E1 a E6, comprueba además que el **contenedor** del nodo llega a los otros 5, que es la ruta que
-     usan `postgres_fdw` y la replicación.
-
-   Cada ✖ indica la causa probable: una IP o un puerto mal escrito en `.env`, el firewall o un nodo sin
-   levantar. No continúe hasta que los 7 equipos muestren «Conectividad completa».
-7. **Configurar, en este orden.** Primero E2 a E6 (`python gestion.py configurar`: suscripción al
-   catálogo) y **al final E1** (crea el esquema `nacional` y carga FC2 leyendo los 6 nodos; si algún nodo
-   está apagado, avisa y basta repetirlo).
-8. **Verificar desde E7.** `python gestion.py estado` debe mostrar los 6 nodos en línea y la replicación
-   activa. Luego, `python -m pruebas.ejecutar_pruebas` y `streamlit run dashboard/app.py`.
-
-### Despliegue mixto con la nube
-
-El Nodo 6 (Beni) y la consola también pueden correr en servidores de **Azure for Students** (gratuito para
-estudiantes) dentro de la misma red Tailscale. El panel queda publicado por HTTPS con contraseña
-(`PANEL_CLAVE`) para verlo desde cualquier navegador. Guía paso a paso: [`docs/DESPLIEGUE_VPS.md`](docs/DESPLIEGUE_VPS.md).
-
-### Diferencias del modo red
-
-| Aspecto | Modo `lab` (1 equipo) | Modo `red` (7 equipos) |
+| Caso | Escenario | Resultado en Azure |
 |---|---|---|
-| Cortar el enlace de un nodo | `python gestion.py aislar be` o el panel | `tailscale down` en el equipo del nodo (`tailscale up` para volver) |
-| Apagar un nodo | `python gestion.py apagar be` o el panel | `python gestion.py apagar be` **en el equipo del nodo** |
-| Venta con el nodo aislado | `python gestion.py vender be` desde cualquier lugar | `python gestion.py vender be` **en el equipo del nodo** |
-| Pruebas automáticas | P0–P13 | P0, P7, P9, P10 y P11 desde E7; los casos de fallas (P1–P6, P8, P12, P13) se demuestran a mano con `tailscale down` |
-| Cambios en `sql/comun` | `python gestion.py reiniciar --si` | `reiniciar --si` en cada equipo afectado y repetir los pasos 5 a 7 |
+| P0 | Reglas de corrección de la fragmentación | 50 000+ ventas en 9 departamentos, 0 duplicados, 0 huérfanos |
+| P1 | Autonomía local con Beni aislada | Beni vende sin red |
+| P2 | Consulta nacional con un nodo caído | Error controlado en 6,6 s, sin bloqueo |
+| P3 | Eliminación de fragmentos | Consultar Santa Cruz no toca a Beni |
+| P4 | Consulta tolerante a fallos | Resumen parcial que marca `fv6_be` FUERA DE LÍNEA |
+| P5 | Consistencia eventual del catálogo | Santa Cruz recibe el precio en 0,6 s; Beni aislada conserva el anterior |
+| P6 | Sincronización diferida | Beni se pone al día 3 s después de reconectarse |
+| P7 | Traspaso 2PC exitoso | Confirmado en ambas; stock nacional sin cambio |
+| P8 | Beni cae a mitad del 2PC | Rollback automático en Santa Cruz |
+| P9 | Cae el coordinador | La recuperación confirma o deshace según el registro |
+| P10 | 20 traspasos simultáneos | El stock nunca baja de 0; total nacional conservado |
+| P11 | Seguridad (matriz CRUD) | 5/5 accesos prohibidos rechazados |
+| P12 | Cae La Paz | Las demás sucursales siguen vendiendo |
+| P13 | Beni apagada | Las demás venden; al volver recibe los cambios pendientes |
 
-> [!WARNING]
-> - El **equipo de cada nodo debe permanecer encendido**: si se apaga o suspende, ese fragmento queda
->   fuera de línea y las consultas nacionales que lo necesitan fallan (de forma controlada).
->   Desactivar la suspensión durante la demostración.
-> - Si un equipo cambia de IP de Tailscale, hay que actualizar `.env` en los 7 equipos y repetir el paso 7.
-> - Cada equipo de nodo necesita unos 2 GB de RAM libres (Docker Desktop + un PostgreSQL).
-> - **Respaldo:** si un equipo falla el día de la defensa, cualquier otro puede alojar ese nodo
->   (agregarlo a su `NODOS_LOCALES` y cambiar su `HOST_*` en todos). Como último recurso, el modo
->   `lab` levanta los 6 nodos en una sola laptop.
+Informe completo: [`docs/INFORME_PRUEBAS.md`](docs/INFORME_PRUEBAS.md).
 
-## 10. Estructura del repositorio
+---
+
+## Despliegue
+
+| Modo | Dónde corren los 6 nodos | Guía |
+|---|---|---|
+| **Azure** (principal) | Una VM por sucursal, en dos regiones | [`docs/DESPLIEGUE_AZURE.md`](docs/DESPLIEGUE_AZURE.md): un script en la Cloud Shell crea y configura todo en 10-15 min |
+| **Laboratorio** | Los 6 contenedores en una sola PC con Docker Desktop | Abajo |
+| **7 laptops** (plan B sin nube) | Un nodo por laptop de cada integrante | [`docs/DESPLIEGUE_RED.md`](docs/DESPLIEGUE_RED.md) |
+
+**Modo laboratorio** (requiere Docker Desktop):
+
+```powershell
+Copy-Item .env.example .env            # MODO=lab: los 6 nodos en esta PC
+.\.venv\Scripts\python.exe gestion.py levantar     # 1-3 min la primera vez
+.\.venv\Scripts\python.exe gestion.py configurar
+.\.venv\Scripts\python.exe gestion.py estado
+```
+
+El mismo código funciona en los tres modos; solo cambia el `.env`.
+
+---
+
+## Estructura del repositorio
 
 ```
-├── docker-compose.yml          6 nodos PostgreSQL 16 (+ pgAdmin opcional)
-├── .env.example                credenciales y topología (copiar a .env)
-├── docker/
-│   ├── initdb/                 script de inicialización de cada nodo
-│   └── pg_hba.conf             acceso solo desde redes privadas, SCRAM
-├── sql/
-│   ├── comun/                  01 roles · 02 esquema y fragmentos · 03 catálogo · 04 datos · 05 funciones · 06 permisos
-│   ├── nodo1_lp/init/          FC2, roles centrales, publicación del catálogo
-│   ├── nodo1_lp/post/          servidores remotos, esquema «nacional», vistas globales, datos FC2
-│   ├── nodo3_cb/init/          registro de decisiones del coordinador 2PC
-│   ├── replicas/post/          suscripción de los nodos 2-6
-│   └── consultas/              consultas distribuidas de referencia C1-C8
+├── abrir_panel.bat             abre el panel (doble clic)
+├── gestion.py                  consola de operación de los nodos
+├── requirements.txt            dependencias de Python
+├── .env.example                plantilla de configuración (el .env real no se sube)
+├── docker-compose.yml          un contenedor PostgreSQL 16 por nodo
+├── api/main.py                 API del panel (FastAPI)
 ├── sgbdd/
 │   ├── config.py               topología (lee .env) y conexión a los nodos
+│   ├── operacion.py            levantar, configurar, estado, fallas (local o por SSH)
 │   ├── coordinador_2pc.py      protocolo de compromiso en dos fases
-│   ├── recuperacion_2pc.py     resolución de transacciones en duda
-│   └── operacion.py            despliegue, configuración, estado, simulación de fallas
-├── gestion.py                  consola de operación
-├── dashboard/                  panel de demostración (Streamlit)
-│   ├── app.py                  navegación y estado de los nodos
-│   ├── comun.py                utilidades compartidas
-│   └── app_pages/              una página por funcionalidad
-├── .streamlit/config.toml      tema visual del panel
-├── pruebas/
-│   ├── ejecutar_pruebas.py     casos de prueba P0-P13
-│   └── test_panel.py           pruebas del panel (AppTest)
-├── .github/workflows/          integración continua
-└── docs/                       especificación técnica y plan de implementación
+│   └── recuperacion_2pc.py     resolución de transacciones en duda
+├── sql/
+│   ├── comun/                  roles, esquema y fragmentos, catálogo, datos, funciones, permisos
+│   ├── nodo1_lp/               La Paz: FC2, publicación del catálogo, esquema nacional, vistas
+│   ├── nodo3_cb/               Cochabamba: registro del 2PC y solicitudes de traspaso
+│   ├── replicas/               suscripción al catálogo de los nodos 2-6
+│   └── consultas/              consultas distribuidas de referencia C1-C8
+├── web/                        panel React (src/) y su versión compilada (dist/)
+├── docker/
+│   ├── initdb/                 inicialización de cada nodo
+│   ├── pg_hba.conf             acceso solo desde redes privadas
+│   └── vps/                    despliegue en Azure (script, preparación de VM, servicio del panel)
+├── pruebas/                    casos P0-P13 y medición de latencia
+├── docs/                       manuales, guías de despliegue, informe de pruebas, evidencias
+└── .github/workflows/          integración continua
 ```
 
-## 11. Solución de problemas
+---
 
-| Síntoma | Causa y solución |
+## Solución de problemas
+
+| Síntoma | Solución |
 |---|---|
-| `ports are not available` al levantar | Otro programa usa el puerto: cambie `PORT_*` en `.env`. |
-| Un nodo no llega a «listo» | `docker logs nodo2_sc` muestra el script SQL que falló. |
-| Cambié un script de `sql/comun` y no se aplica | Solo corren con el volumen vacío: `python gestion.py reiniciar --si`. |
-| `configurar` avisa «FC2 no cargado» | Algún nodo estaba caído; repita `configurar` con todos en línea. |
-| Conexiones lentas en Windows | Use `127.0.0.1` en lugar de `localhost` en `HOST_*` (evita el intento por IPv6). |
-| Quedan filas bloqueadas tras un fallo del coordinador | `python gestion.py recuperar` (o `--edad-minima 0`). |
-| Restauré un nodo y el catálogo no volvió al estado del respaldo | Es intencional: `restaurar` no toca el catálogo ni la replicación (recrear la publicación rompe a los suscriptores en PostgreSQL 16). Corrija precios en La Paz con `UPDATE`: se replica. |
+| `estado` muestra un nodo SIN CONEXIÓN | La VM está apagada o sin Tailscale: Cloud Shell `az vm start -g rg-sgbdd -n vm-xx`, o portal → vm-xx → Ejecutar comando → `tailscale up` |
+| Todos los nodos SIN CONEXIÓN | Su laptop no está en Tailscale (`tailscale status`) o las VMs están apagadas |
+| `aislar`, `apagar` o `vender` se quedan esperando | Tailscale pide verificación SSH: en su consola, ACL → bloque `ssh` → `"action": "accept"` |
+| `ssh: … Connection timed out` | La VM de ese nodo no está en la red (mismo arreglo que SIN CONEXIÓN) |
+| `python` no se reconoce | Reinstale Python marcando «Add python.exe to PATH» y abra otra PowerShell |
+| El panel pide contraseña y no la acepta | Use la `CLAVE_XX` de su sucursal en el `.env` |
+| El panel no muestra un cambio reciente | Ctrl + F5 en el navegador; `git pull` y reabra `abrir_panel.bat` |
+| `recuperar` dice que Cochabamba no responde | La recuperación decide con el registro del Nodo 3: `py gestion.py restablecer cb` |
+| Quedó un nodo aislado o apagado tras una prueba | `py gestion.py restablecer` |
 
-### Trasladar un nodo a otro equipo (modo red)
+---
 
-Ejemplo con Beni:
+## Documentación
 
-1. En el equipo actual, `python gestion.py respaldar be`. Copie el `.dump` al equipo nuevo.
-2. En el equipo nuevo, agregue `be` a `NODOS_LOCALES`. En los 7 `.env`, cambie `HOST_BE` por la IP de
-   Tailscale del equipo nuevo.
-3. En el equipo nuevo, ejecute `python gestion.py levantar` y luego
-   `python gestion.py restaurar be <archivo> --si`.
-4. Ejecute `python gestion.py configurar` primero en el equipo nuevo y después en E1. Esto vuelve a
-   suscribir a Beni y apunta a la nueva dirección los servidores remotos de La Paz.
-5. En el equipo anterior, ejecute `docker compose stop nodo6_be`.
-6. El catálogo de Beni parte de la carga inicial. Para que reciba los precios que La Paz cambió antes
-   del traslado, ejecute en E1:
-   `python gestion.py sql lp "UPDATE productos_catalogo SET precio_unitario = precio_unitario"`.
-   Ese `UPDATE` vuelve a enviar el catálogo completo a todos los nodos.
+| Documento | Contenido |
+|---|---|
+| [Manual de operación](docs/MANUAL_OPERACION.md) | Varias laptops, panel y terminal paso a paso |
+| [Despliegue en Azure](docs/DESPLIEGUE_AZURE.md) | Crear y configurar las 6 VMs; uso diario y costos |
+| [Guion de la defensa](docs/GUION_DEFENSA.md) | Los 15 minutos de la presentación |
+| [Informe de pruebas](docs/INFORME_PRUEBAS.md) | Casos P0-P13 en laboratorio y en Azure |
+| [Especificación técnica](docs/Especificacion_Tecnica_SGBDD_BoliviaDistribucion.docx) | Documento formal del diseño (APA 7) |
+| [Plan de implementación](docs/PLAN_IMPLEMENTACION.md) · [Tareas del equipo](docs/TAREAS_EQUIPO.md) | Planificación y reparto del trabajo |
+| [Despliegue en 7 laptops](docs/DESPLIEGUE_RED.md) | Plan B sin nube |
+| [Panel web](web/README.md) | Cómo modificar el frontend |
 
-## 12. Documentación
-
-- [Especificación técnica (APA 7)](docs/Especificacion_Tecnica_SGBDD_BoliviaDistribucion.docx)
-- [Plan de implementación](docs/PLAN_IMPLEMENTACION.md)
-- [Informe de pruebas](docs/INFORME_PRUEBAS.md)
+**Fotos de productos:** Wikimedia Commons, licencias libres; autores y licencias en
+[`web/public/productos/CREDITOS.md`](web/public/productos/CREDITOS.md). Las marcas pertenecen a sus
+dueños y se usan solo para ilustrar un proyecto académico.
 
 ### Referencias
 

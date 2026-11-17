@@ -1,9 +1,8 @@
 """Casos de prueba del plan de pruebas (sección 15 de la especificación).
 
-Modo lab: los 6 nodos en este equipo, levantados y configurados; corren los 13 casos.
-Modo red (p. ej. desde el equipo de consola): corren P0, P7, P9, P10 y P11, que no necesitan
-cortar enlaces, y P13 en el equipo de Beni (E6), que puede apagar su propio servidor. Los demás casos
-de fallas (P1-P6, P8, P12) se demuestran a mano con `tailscale down` en el equipo del nodo.
+Modo lab: los 6 nodos en este equipo, levantados y configurados.
+Modo red (Azure, desde una consola): las fallas se provocan en el servidor de cada nodo por SSH
+(sgbdd.operacion), así que corren los 14 casos igual que en lab.
 Uso:  python -m pruebas.ejecutar_pruebas            (todos)
       python -m pruebas.ejecutar_pruebas P7 P8      (algunos)
 Cada prueba deja los nodos encendidos y reconectados al terminar, pase o falle.

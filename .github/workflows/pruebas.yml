@@ -1,4 +1,6 @@
-# Levanta los 6 nodos en modo lab y corre las 14 pruebas y las del panel en cada cambio a main.
+# Integración continua: en cada cambio a main
+#   · levanta los 6 nodos en modo lab y corre las 14 pruebas (P0–P13);
+#   · comprueba que el frontend (React) compila.
 name: pruebas
 
 on:
@@ -8,7 +10,7 @@ on:
     branches: [main]
 
 jobs:
-  pruebas:
+  base-distribuida:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -22,7 +24,6 @@ jobs:
       - run: python gestion.py levantar
       - run: python gestion.py configurar
       - run: python -m pruebas.ejecutar_pruebas
-      - run: python -m pruebas.test_panel
       - name: Registros de los nodos
         if: failure()
         run: docker compose logs --no-color > registros_nodos.txt
@@ -31,3 +32,19 @@ jobs:
         with:
           name: registros-nodos
           path: registros_nodos.txt
+
+  panel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run build

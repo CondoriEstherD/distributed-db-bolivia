@@ -1,4 +1,8 @@
-# Hoja de despliegue en red · 7 equipos
+# Hoja de despliegue en red · 7 laptops (alternativa a Azure)
+
+> [!NOTE]
+> El despliegue principal del proyecto es en Azure, una VM por sucursal: [DESPLIEGUE_AZURE.md](DESPLIEGUE_AZURE.md).
+> Esta hoja es el plan B: los 6 nodos en las laptops de los integrantes, sin nube.
 
 **Fecha del montaje:** ____ / ____ / 2026  **Hora de inicio:** ______  **Hora de fin:** ______
 **Responsable:** Integrante 2 (infraestructura · Nodo 2 Santa Cruz)
@@ -14,9 +18,8 @@
 
 Completar antes de empezar. **No escribir contraseñas en esta hoja.**
 
-> **Despliegue mixto con la nube:** el Nodo 6 (Beni) y la consola (E7) pueden correr en servidores de
-> Azure (`vm-beni` y `vm-consola`) en lugar de laptops. Se anota su IP de Tailscale igual que las demás
-> y se siguen los pasos de [`DESPLIEGUE_VPS.md`](DESPLIEGUE_VPS.md).
+> **Combinación con la nube:** cualquier nodo puede correr en una VM de Azure en lugar de una laptop
+> (ver [`DESPLIEGUE_AZURE.md`](DESPLIEGUE_AZURE.md)); se anota su IP de Tailscale igual que las demás.
 
 | Equipo | Nodo que aloja | `NODOS_LOCALES` | Puerto | Integrante | IP de Tailscale (`tailscale ip -4`) |
 |---|---|---|---|---|---|
@@ -73,7 +76,7 @@ HOST_BE=100.x.x.x         # IP de E6
 | 4 | **E1, al final** | `python gestion.py configurar` | Esquema `nacional` creado y FC2 cargado | ☐ |
 | 5 | E7 | `python gestion.py estado` | 6 nodos en línea y 5 réplicas activas | ☐ |
 | 6 | E7 | `python -m pruebas.ejecutar_pruebas` | P0, P7, P9, P10 y P11 pasan | ☐ |
-| 7 | E7 | `streamlit run dashboard/app.py` | El panel muestra los 6 nodos en línea | ☐ |
+| 7 | E7 | `abrir_panel.bat` (http://localhost:8000) | El panel muestra los 6 nodos en línea | ☐ |
 
 **Salida de `verificar` en E7** (pegar):
 

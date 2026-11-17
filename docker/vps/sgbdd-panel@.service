@@ -1,6 +1,7 @@
-# Panel Streamlit en la VM de consola. %i = usuario de la VM (p. ej. azureuser).
+# Panel del SGBDD (API FastAPI + frontend compilado en web/dist) en una VM. %i = usuario de la VM.
 #   sudo systemctl enable --now sgbdd-panel@azureuser
-# Escucha solo en 127.0.0.1: llega a internet únicamente por Tailscale Funnel (HTTPS).
+# Escucha solo en 127.0.0.1:8000: llega a internet únicamente por Tailscale Funnel (HTTPS) y pide
+# la contraseña de la sucursal.
 [Unit]
 Description=Panel SGBDD BoliviaDistribucion
 After=network-online.target tailscaled.service
@@ -9,7 +10,7 @@ Wants=network-online.target
 [Service]
 User=%i
 WorkingDirectory=/home/%i/sgbdd
-ExecStart=/home/%i/sgbdd/.venv/bin/streamlit run dashboard/app.py --server.address 127.0.0.1 --server.port 8501
+ExecStart=/home/%i/sgbdd/.venv/bin/uvicorn api.main:app --host 127.0.0.1 --port 8000
 Restart=always
 RestartSec=5
 

@@ -46,9 +46,7 @@ sudo systemctl daemon-reload
 
 cat <<EOF
 
-✔ VPS preparado. Siguientes pasos (ver docs/DESPLIEGUE_VPS.md):
-  1. sudo tailscale up            → abrir el enlace e iniciar sesión con la cuenta del grupo
-  2. tailscale ip -4              → anotar la IP 100.x.y.z en la hoja de despliegue
-  3. Copiar el .env común a $RAIZ/.env y ajustar NODOS_LOCALES
-  4. Cerrar la sesión SSH y volver a entrar (para usar docker sin sudo)
+✔ VPS preparado. Normalmente lo hace docker/vps/azure_desplegar.sh (ver docs/DESPLIEGUE_AZURE.md).
+  A mano: sudo tailscale up · copiar el .env común a $RAIZ/.env con NODOS_LOCALES=<nodo> ·
+  cerrar la sesión SSH y volver a entrar (para usar docker sin sudo).
 EOF
