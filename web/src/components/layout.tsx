@@ -14,6 +14,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar'
 import { api, DEPARTAMENTOS, useEstado } from '@/lib/api'
+import { useSolicitudes } from '@/pages/traspasos'
 import { cn } from '@/lib/utils'
 
 const TIENDA = [
@@ -21,7 +22,7 @@ const TIENDA = [
   { a: '/ventas', titulo: 'Historial de ventas', icono: Receipt },
   { a: '/clientes', titulo: 'Clientes', icono: Users },
   { a: '/inventario', titulo: 'Inventario', icono: Boxes },
-  { a: '/envios', titulo: 'Envíos entre sucursales', icono: Truck },
+  { a: '/traspasos', titulo: 'Traspasos', icono: Truck },
 ]
 const CENTRAL = [
   { a: '/central', titulo: 'Panorama nacional', icono: LayoutDashboard },
@@ -54,6 +55,7 @@ export function Layout({ sucursal, central }: { sucursal: string; central: boole
   const yo = data?.nodos.find((n) => n.cod === sucursal)
   const enRed = yo?.en_linea
   const nodosEnLinea = data?.nodos.filter((n) => n.en_linea).length
+  const porRecibir = (useSolicitudes().data?.filas ?? []).filter((s) => s.destino === sucursal && s.estado === 'PENDIENTE').length
 
   async function salir() {
     await api('/logout', { method: 'POST' })
@@ -84,7 +86,10 @@ export function Layout({ sucursal, central }: { sucursal: string; central: boole
           <SidebarGroup>
             <SidebarGroupLabel>Mi sucursal</SidebarGroupLabel>
             <SidebarGroupContent>
-              <SidebarMenu>{TIENDA.map((o) => <Enlace key={o.a} {...o} />)}</SidebarMenu>
+              <SidebarMenu>{TIENDA.map((o) => (
+                <Enlace key={o.a} {...o} extra={o.a === '/traspasos' && porRecibir > 0
+                  ? <SidebarMenuBadge className="rounded-full bg-amber-500 text-white">{porRecibir}</SidebarMenuBadge> : undefined} />
+              ))}</SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
           {central && (

@@ -13,7 +13,7 @@ import Fallas from '@/pages/fallas'
 import Ingreso from '@/pages/ingreso'
 import Panorama from '@/pages/panorama'
 import { Clientes, Inventario, Ventas } from '@/pages/tienda'
-import Envios from '@/pages/envios'
+import Traspasos from '@/pages/traspasos'
 import PuntoDeVenta from '@/pages/vender'
 
 export default function App() {
@@ -42,7 +42,7 @@ export default function App() {
         <Route path="ventas" element={<Ventas />} />
         <Route path="clientes" element={<Clientes />} />
         <Route path="inventario" element={<Inventario />} />
-        <Route path="envios" element={<Envios />} />
+        <Route path="traspasos" element={<Traspasos />} />
         {central && (
           <Route path="central">
             <Route index element={<Panorama />} />
