@@ -1,17 +1,17 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowRight, Ban, CheckCircle2, CircleDot, Loader2, Minus, Plus, Scale, Trash2, Truck, Wifi, WifiOff, XCircle } from 'lucide-react'
+import { ArrowRight, Ban, CheckCircle2, CircleDot, Loader2, Minus, Plus, Scale, Store, Trash2, Truck, Wifi, WifiOff, XCircle } from 'lucide-react'
 
 import { BloqueSql, Cargando, Encabezado, Error, Seccion, Tabla } from '@/components/comunes'
 import { GrillaProductos } from '@/components/productos'
-import { Selector } from '@/components/selector'
+import { Segmentos } from '@/components/selector'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
-import { api, type ConSql, DEPARTAMENTOS, fmt, foto, useAlmacenes, useEstado, useProductos, useSesion } from '@/lib/api'
+import { type Almacen, api, type ConSql, DEPARTAMENTOS, fmt, foto, useAlmacenes, useEstado, useProductos, useSesion } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 interface Stock { id_producto: number; origen: number | null; destino: number | null; nacional: number | null }
@@ -105,11 +105,8 @@ export default function Envios({ todasLasSucursales = false }: { todasLasSucursa
     }
   }
 
-  const destinos = (almacenes.data ?? []).filter((a) => a.nodo !== alm(origen)?.nodo).map((a) => {
-    const n = estado?.nodos.find((x) => x.cod === a.nodo)
-    return { valor: a.id, etiqueta: `Sucursal ${a.nodo_nombre} · ${a.nombre}`, grupo: `Nodo ${a.num} · ${a.nodo_nombre}`,
-      detalle: n && !n.en_linea ? (n.estado === 'AISLADO' ? 'sin red' : 'sin conexión') : DEPARTAMENTOS[a.depto] }
-  })
+  const otras = (estado?.nodos ?? []).filter((n) => n.cod !== alm(origen)?.nodo)
+  const sucDestino = alm(destino)?.nodo
   const destinoCaido = destino && nodoDe(destino) && !nodoDe(destino)!.en_linea
   const yoCaido = nodoDe(origen) && !nodoDe(origen)!.en_linea
   const conservado = antes && stock.data && fase === 'fin' && fin?.ok && antes.every((a) => a.nacional != null && a.nacional === s(a.id_producto)?.nacional)
@@ -124,21 +121,60 @@ export default function Envios({ todasLasSucursales = false }: { todasLasSucursa
           <AlertDescription className="text-amber-900/80">Puede seguir vendiendo, pero no puede enviar mercadería hasta que vuelva la conexión: el 2PC necesita el voto de ambas sucursales.</AlertDescription></Alert>
       )}
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_400px]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_350px]">
         <div className="min-w-0 space-y-4">
-          <Seccion titulo="1 · Ruta del envío">
-            <div className="grid items-end gap-3 md:grid-cols-[1fr_auto_1fr]">
-              <div className="space-y-2">
-                <Label>Desde (almacén de esta sucursal)</Label>
-                <Selector valor={origen} alCambiar={setOrigen}
-                  opciones={propios.map((a) => ({ valor: a.id, etiqueta: `${a.nombre} · ${a.nodo_nombre}`, detalle: DEPARTAMENTOS[a.depto] }))} />
-              </div>
-              <Truck className="mx-auto mb-2 hidden size-5 text-muted-foreground md:block" />
-              <div className="space-y-2">
-                <Label>Hacia (sucursal de destino)</Label>
-                <Selector valor={destino} alCambiar={setDestino} placeholder="Elija la sucursal de destino…" buscar="Sucursal o departamento…" opciones={destinos} />
+          <Seccion titulo="1 · Ruta del envío" descripcion="Elija desde qué almacén sale la mercadería y a qué sucursal y departamento llega">
+            <div className="space-y-2">
+              <Label>Sale de · Sucursal {alm(origen)?.nodo_nombre}</Label>
+              <ElegirAlmacen almacenes={propios} valor={origen} alCambiar={(a) => { setOrigen(a); if (alm(destino)?.nodo === alm(a)?.nodo) setDestino(null) }} />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Llega a · elija la sucursal de destino</Label>
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3">
+                {otras.map((n) => {
+                  const elegida = n.cod === sucDestino
+                  return (
+                    <button key={n.cod} type="button" disabled={!n.en_linea}
+                      onClick={() => setDestino((almacenes.data ?? []).find((a) => a.nodo === n.cod)?.id ?? null)}
+                      className={cn('flex items-start gap-3 rounded-lg border p-3 text-left transition-colors',
+                        elegida ? 'border-primary bg-accent ring-1 ring-primary' : 'hover:bg-muted',
+                        !n.en_linea && 'cursor-not-allowed opacity-60 hover:bg-transparent')}>
+                      <div className={cn('flex size-9 shrink-0 items-center justify-center rounded-md',
+                        elegida ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}><Store className="size-4" /></div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate text-sm font-medium">Sucursal {n.nombre}</span>
+                          {elegida && <CheckCircle2 className="size-4 shrink-0 text-primary" />}
+                        </div>
+                        <div className="text-xs text-muted-foreground">{n.deptos.map((d) => DEPARTAMENTOS[d]).join(' · ')}</div>
+                        <div className={cn('mt-1 flex items-center gap-1 text-[11px]', n.en_linea ? 'text-success' : 'text-destructive')}>
+                          {n.en_linea ? <Wifi className="size-3" /> : <WifiOff className="size-3" />}
+                          {n.en_linea ? 'En la red · puede recibir' : n.estado === 'AISLADO' ? 'Sin red · no puede recibir envíos' : 'Sin conexión'}
+                        </div>
+                      </div>
+                    </button>
+                  )
+                })}
               </div>
             </div>
+
+            {sucDestino && (
+              <div className="space-y-2">
+                <Label>Departamento y almacén de destino</Label>
+                <ElegirAlmacen almacenes={(almacenes.data ?? []).filter((a) => a.nodo === sucDestino)} valor={destino} alCambiar={setDestino} />
+              </div>
+            )}
+
+            {origen && destino && (
+              <div className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/60 px-3 py-2 text-sm">
+                <span className="font-medium">{alm(origen)?.nombre}</span>
+                <span className="text-muted-foreground">({DEPARTAMENTOS[alm(origen)!.depto]})</span>
+                <Truck className="size-4 text-primary" />
+                <span className="font-medium">{alm(destino)?.nombre}</span>
+                <span className="text-muted-foreground">({DEPARTAMENTOS[alm(destino)!.depto]}, Sucursal {alm(destino)?.nodo_nombre})</span>
+              </div>
+            )}
             {destinoCaido && (
               <Alert variant="destructive"><Ban /><AlertTitle>La sucursal de destino no está en la red</AlertTitle>
                 <AlertDescription>{nodoDe(destino)!.nodo} está {nodoDe(destino)!.estado.toLowerCase()}: no puede votar en el 2PC, así que el envío no se permite. Sus ventas locales no se ven afectadas.</AlertDescription></Alert>
@@ -169,12 +205,12 @@ export default function Envios({ todasLasSucursales = false }: { todasLasSucursa
                 })}
               </div>
             )}
-            <GrillaProductos productos={productos.data ?? []} cantidades={items} columnas="grid-cols-2 md:grid-cols-3 2xl:grid-cols-4"
+            <GrillaProductos productos={productos.data ?? []} cantidades={items} columnas="grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
               alAgregar={(p) => cambiar(p, (items[p] ?? 0) + 1)} alCambiar={cambiar} />
           </Seccion>
         </div>
 
-        <div className="space-y-4 xl:sticky xl:top-20 xl:h-fit">
+        <div className="space-y-4 lg:sticky lg:top-20 lg:h-fit lg:max-h-[calc(100svh-6rem)] lg:overflow-y-auto">
           <Seccion titulo="3 · Confirmar envío">
             <div className="space-y-3">
               <div className="flex justify-between text-sm"><Label>Pausa tras cada PREPARE (demostración)</Label><span className="text-muted-foreground tabular-nums">{pausa} s</span></div>
@@ -236,5 +272,22 @@ export default function Envios({ todasLasSucursales = false }: { todasLasSucursa
         )}
       </Seccion>
     </>
+  )
+}
+
+// Departamento (si la sucursal tiene dos) y almacén: cada departamento tiene dos almacenes.
+function ElegirAlmacen({ almacenes, valor, alCambiar }: { almacenes: Almacen[]; valor: number | null; alCambiar: (id: number) => void }) {
+  const deptos = [...new Set(almacenes.map((a) => a.depto))]
+  const depto = almacenes.find((a) => a.id === valor)?.depto ?? deptos[0]
+  if (!deptos.length) return null
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {deptos.length > 1 ? (
+        <Segmentos valor={depto} alCambiar={(d) => alCambiar(almacenes.find((a) => a.depto === d)!.id)}
+          opciones={deptos.map((d) => ({ valor: d, etiqueta: DEPARTAMENTOS[d] }))} />
+      ) : <Badge variant="secondary" className="h-8 px-3">{DEPARTAMENTOS[depto]}</Badge>}
+      <Segmentos valor={String(valor ?? '')} alCambiar={(v) => alCambiar(Number(v))}
+        opciones={almacenes.filter((a) => a.depto === depto).map((a) => ({ valor: String(a.id), etiqueta: a.nombre }))} />
+    </div>
   )
 }

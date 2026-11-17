@@ -752,5 +752,7 @@ def frontend(ruta: str):
     if ruta and archivo.is_file() and DIST in archivo.parents:
         return FileResponse(archivo)
     if (DIST / "index.html").is_file():
-        return FileResponse(DIST / "index.html")
+        # index.html sin caché: tras cada compilación el navegador toma la versión nueva al instante
+        # (los JS/CSS llevan un hash en el nombre, así que esos sí pueden guardarse).
+        return FileResponse(DIST / "index.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
     return JSONResponse({"detail": "Frontend sin compilar: cd web && npm run build"}, status_code=404)

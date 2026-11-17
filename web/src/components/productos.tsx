@@ -52,7 +52,7 @@ export function GrillaProductos({ productos, stock, cantidades = {}, alAgregar, 
               c === categoria ? 'border-primary bg-primary text-primary-foreground' : 'bg-card hover:bg-muted')}>{c}</button>
         ))}
       </div>
-      <div className={cn('grid gap-3', columnas ?? 'grid-cols-2 md:grid-cols-3 2xl:grid-cols-4')}>
+      <div className={cn('grid gap-3', columnas ?? 'grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4')}>
         {visibles.map((g) => {
           const enCarrito = g.variantes.reduce((s, v) => s + (cantidades[v.id] ?? 0), 0)
           const disponible = stock ? g.variantes.reduce((s, v) => s + stock(v.id), 0) : null
@@ -62,7 +62,7 @@ export function GrillaProductos({ productos, stock, cantidades = {}, alAgregar, 
             <button key={g.base} type="button" onClick={() => setAbierto(g)}
               className={cn('group relative overflow-hidden rounded-xl border bg-card text-left transition-all hover:-translate-y-0.5 hover:shadow-lg',
                 (enCarrito > 0 || elegido) && 'ring-2 ring-primary', disponible === 0 && 'opacity-50')}>
-              <div className="relative aspect-[3/2] overflow-hidden bg-muted">
+              <div className="relative aspect-[16/10] overflow-hidden bg-muted">
                 <img src={foto(g.variantes[0].id)} alt={g.nombre} loading="lazy" className="size-full object-cover transition-transform duration-300 group-hover:scale-105" />
                 {enCarrito > 0 && <span className="absolute top-2 right-2 flex h-7 min-w-7 items-center justify-center rounded-full bg-primary px-2 text-sm font-semibold text-primary-foreground shadow">{enCarrito}</span>}
               </div>

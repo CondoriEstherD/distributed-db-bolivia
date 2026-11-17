@@ -66,7 +66,7 @@ export default function PuntoDeVenta() {
   }
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_350px]">
       <div className="min-w-0 space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -95,7 +95,7 @@ export default function PuntoDeVenta() {
       </div>
 
       {/* Carrito */}
-      <div className="xl:sticky xl:top-20 xl:h-fit">
+      <div className="lg:sticky lg:top-20 lg:h-fit lg:max-h-[calc(100svh-6rem)] lg:overflow-y-auto">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-base"><ShoppingCart className="size-4" /> Venta actual</CardTitle>

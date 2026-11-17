@@ -50,13 +50,13 @@ export default function Catalogo() {
       <Encabezado titulo="Catálogo y precios"
         descripcion="Los mismos productos y precios en las 6 sucursales. Solo La Paz modifica el catálogo; cada cambio viaja a las demás por replicación lógica asíncrona (consistencia eventual)." />
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_400px]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0">
           <GrillaProductos productos={productos.data ?? []} modo="elegir" seleccionado={id}
             alAgregar={(x) => { setId(x); setEditado(null); publicar.reset() }} />
         </div>
 
-        <div className="space-y-4 xl:sticky xl:top-20 xl:h-fit">
+        <div className="space-y-4 lg:sticky lg:top-20 lg:h-fit lg:max-h-[calc(100svh-6rem)] lg:overflow-y-auto">
           {p && (
             <Card className="overflow-hidden pt-0">
               <img src={foto(p.id)} alt={p.nombre} className="aspect-[16/10] w-full object-cover" />
