@@ -517,6 +517,9 @@ def api_solicitar(s: Solicitud, request: Request):
     exigir(request, o.cod)
     if o == d:
         raise HTTPException(400, "El traspaso debe ser a otra sucursal")
+    if not en_linea(o.cod):
+        raise HTTPException(409, f"{o} no está en la red nacional: no alcanza el registro de traspasos (Nodo 3). "
+                                 "Puede seguir vendiendo; solicite el traspaso cuando vuelva la conexión.")
     items = {str(p): q for p, q in s.items.items() if q > 0}
     if not items:
         raise HTTPException(400, "Agregue al menos un producto")

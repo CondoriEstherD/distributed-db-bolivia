@@ -111,6 +111,10 @@ function NuevoTraspaso({ alEnviar }: { alEnviar: () => void }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_350px]">
       <div className="min-w-0 space-y-4">
+        {yo && !yo.en_linea && (
+          <Alert className="border-amber-300 bg-amber-50 text-amber-900"><WifiOff /><AlertTitle>Esta sucursal no está en la red nacional</AlertTitle>
+            <AlertDescription className="text-amber-900/80">Puede seguir vendiendo, pero no puede solicitar ni recibir traspasos hasta que vuelva la conexión.</AlertDescription></Alert>
+        )}
         <Seccion titulo="1 · Ruta del traspaso" descripcion="Desde qué almacén sale la mercadería y a qué sucursal y departamento llega">
           <div className="space-y-2">
             <Label>Sale de · Sucursal {yo?.nombre}</Label>
@@ -129,7 +133,7 @@ function NuevoTraspaso({ alEnviar }: { alEnviar: () => void }) {
                       <Store className="size-4" /></div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="truncate text-sm font-medium">Sucursal {n.nombre}</span>
+                        <span className="text-sm leading-tight font-medium">Sucursal {n.nombre}</span>
                         {elegida && <CheckCircle2 className="size-4 shrink-0 text-primary" />}
                       </div>
                       <div className="text-xs text-muted-foreground">{n.deptos.map((d) => DEPARTAMENTOS[d]).join(' · ')}</div>
@@ -193,7 +197,7 @@ function NuevoTraspaso({ alEnviar }: { alEnviar: () => void }) {
           </div>
           {excede && <p className="text-xs text-destructive">Hay productos con más unidades que las disponibles: el 2PC los rechazará al ejecutarse.</p>}
           {solicitar.error && <Error error={solicitar.error} titulo="No se pudo enviar la solicitud" />}
-          <Button size="lg" className="h-11 w-full" disabled={!ids.length || !destino || solicitar.isPending} onClick={() => solicitar.mutate()}>
+          <Button size="lg" className="h-11 w-full" disabled={!ids.length || !destino || solicitar.isPending || !yo?.en_linea} onClick={() => solicitar.mutate()}>
             {solicitar.isPending ? <Loader2 className="animate-spin" /> : <Send />} Solicitar traspaso
           </Button>
           <p className="text-[11px] text-muted-foreground">La mercadería no se mueve todavía: el encargado de la sucursal de destino debe aceptar.</p>

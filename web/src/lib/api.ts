@@ -81,7 +81,7 @@ export function useSesion() {
 
 // ------------------------------------------------------------------ productos: foto y presentación
 // El catálogo son 25 productos base × 8 presentaciones (03_catalogo_semilla.sql): id = (base-1)*8 + presentación.
-export const PRESENTACIONES = ['Unidad', 'Pack x3', 'Pack x6', 'Caja x12', 'Familiar', 'Económico', 'Premium', 'Mayorista x24']
+export const PRESENTACIONES = ['Unidad', 'Pack x3', 'Pack x6', 'Caja x12', 'Tamaño familiar', 'Tamaño viaje', 'Edición premium', 'Mayorista x24']
 export const foto = (id: number) => `/productos/${Math.floor((id - 1) / 8) + 1}.jpg`
 export const presentacion = (id: number) => PRESENTACIONES[(id - 1) % 8]
 export const nombreBase = (p: { id: number; nombre: string }) => p.nombre.replace(` ${presentacion(p.id)}`, '')
