@@ -7,10 +7,11 @@ sobre Tailscale: aislar/reconectar (firewall de la WAN), apagar/encender, vender
   python gestion.py configurar           suscripciones al catálogo + esquema global en La Paz
   python gestion.py estado               salud, volumen y replicación de los 6 nodos
   python gestion.py verificar            conectividad entre equipos y contenedores (antes de configurar)
-  python gestion.py aislar be            corta el enlace WAN del nodo (modo lab)
+  python gestion.py aislar be            corta el enlace WAN del nodo (sigue vendiendo localmente)
   python gestion.py reconectar be        restablece el enlace
   python gestion.py apagar be            caída total: detiene el servidor del nodo
-  python gestion.py encender be          vuelve a encender el nodo
+  python gestion.py encender be          vuelve a encender el nodo (también: prender)
+  python gestion.py restablecer [be]     reconecta y enciende ese nodo, o TODOS si no se indica
   python gestion.py latencia be 300      retardo de 300 ms en el enlace de Beni (0 lo quita)
   python gestion.py vender be            venta de demostración en la consola local del nodo
   python gestion.py sql lp "SELECT 1"    SQL en la consola local de un nodo (superusuario)
@@ -23,6 +24,8 @@ import argparse
 import shutil
 import sys
 from pathlib import Path
+
+import psycopg
 
 RAIZ = Path(__file__).resolve().parent
 if not (RAIZ / ".env").exists():
@@ -55,8 +58,11 @@ def main():
     sub.add_parser("configurar")
     sub.add_parser("estado")
     sub.add_parser("verificar")
-    for nombre in ("aislar", "reconectar", "apagar", "encender", "vender", "respaldar"):
+    for nombre in ("aislar", "reconectar", "apagar", "vender", "respaldar"):
         sub.add_parser(nombre).add_argument("nodo", type=_nodo)
+    sub.add_parser("encender", aliases=["prender"]).add_argument("nodo", type=_nodo)
+    s = sub.add_parser("restablecer", help="reconecta y enciende un nodo, o todos si no se indica")
+    s.add_argument("nodo", type=_nodo, nargs="?")
     s = sub.add_parser("latencia"); s.add_argument("nodo", type=_nodo); s.add_argument("ms", type=int)
     s = sub.add_parser("sql"); s.add_argument("nodo", type=_nodo); s.add_argument("consulta")
     s = sub.add_parser("restaurar"); s.add_argument("nodo", type=_nodo); s.add_argument("archivo", type=Path)
@@ -88,8 +94,10 @@ def main():
             op.reconectar(a.nodo); print(f"{a.nodo} reconectado a la WAN")
         elif a.comando == "apagar":
             op.apagar(a.nodo); print(f"{a.nodo} APAGADO (servidor detenido)")
-        elif a.comando == "encender":
+        elif a.comando in ("encender", "prender"):
             op.encender(a.nodo); print(f"{a.nodo} encendido; la réplica del catálogo se sincroniza sola")
+        elif a.comando == "restablecer":
+            cmd_restablecer([a.nodo] if a.nodo else list(NODOS.values()))
         elif a.comando == "latencia":
             op.latencia(a.nodo, a.ms)
             print(f"{a.nodo}: latencia de {a.ms} ms" if a.ms else f"{a.nodo}: latencia eliminada")
@@ -107,13 +115,42 @@ def main():
                 sys.exit(f"Esto reemplaza los datos de {a.nodo} por los del respaldo. Repita con --si para confirmar.")
             op.restaurar(a.nodo, a.archivo); print(f"{a.nodo} restaurado desde {a.archivo.name}")
         elif a.comando == "recuperar":
-            recuperar(a.edad_minima)
+            try:
+                recuperar(a.edad_minima)
+            except psycopg.OperationalError:
+                sys.exit("Error: la recuperación decide con el registro de traspasos de Cochabamba (Nodo 3), que no "
+                         "responde. Restablézcalo primero: python gestion.py restablecer cb")
         elif a.comando == "reiniciar":
             if not a.si:
                 sys.exit("Esto borra TODOS los datos de los nodos. Repita con --si para confirmar.")
             op.reiniciar(); print("Contenedores y volúmenes eliminados.")
     except RuntimeError as e:
         sys.exit(f"Error: {e}")
+    except psycopg.OperationalError as e:
+        sys.exit(f"Error de conexión: {str(e).strip().splitlines()[0]}. Revise con: python gestion.py estado")
+
+
+def cmd_restablecer(nodos):
+    """Deja cada nodo como en operación normal: enlace WAN restablecido y servidor encendido."""
+    problemas = []
+    for n in nodos:
+        try:
+            op.reconectar(n)
+            if op.apagado(n):
+                op.encender(n, informar=lambda *_: None)
+                print(f"✔ {n}: encendido y reconectado")
+            else:
+                print(f"✔ {n}: reconectado")
+        except RuntimeError as e:
+            problemas.append(n)
+            print(f"✖ {e}" if str(e).startswith(str(n)) else f"✖ {n}: {e}")
+    if problemas:
+        print("\nPara un servidor inalcanzable (VM apagada o sin Tailscale):\n"
+              "  · Portal de Azure → vm-xx → Ejecutar comando → RunShellScript → tailscale up\n"
+              "  · o, si la VM está detenida, Cloud Shell: az vm start -g rg-sgbdd -n vm-xx\n"
+              "  Luego repita: python gestion.py restablecer")
+    else:
+        print("\nTodo restablecido. Si hubo transacciones en duda: python gestion.py recuperar --edad-minima 0")
 
 
 if __name__ == "__main__":

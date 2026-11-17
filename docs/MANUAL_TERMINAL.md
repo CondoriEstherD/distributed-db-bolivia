@@ -52,7 +52,10 @@ py gestion.py aislar be        # corta el enlace WAN de Beni (firewall); Beni si
 py gestion.py reconectar be    # restablece el enlace; la réplica del catálogo se pone al día sola
 
 py gestion.py apagar be        # caída total del servidor de base de datos de Beni
-py gestion.py encender be      # lo enciende y espera a que esté sano
+py gestion.py encender be      # lo enciende y espera a que esté sano (también: prender be)
+
+py gestion.py restablecer      # deja TODO como en operación normal (reconecta y enciende los 6)
+py gestion.py restablecer be   # solo Beni
 
 py gestion.py latencia be 300  # 300 ms de retardo en el enlace de Beni (0 lo quita)
 ```
@@ -176,5 +179,7 @@ levanta el nodo solo y la réplica del catálogo se pone al día.
 | Un comando se queda esperando | Tailscale pide verificación SSH: abra el enlace que muestra, o ponga la ACL en `accept` |
 | `no se alcanza su servidor (vm-xx)` | La VM está apagada o sin Tailscale: `az vm start …` o, en el portal, Ejecutar comando → `tailscale up` |
 | Hay transacciones en duda (`2PC PEND.` > 0) | `py gestion.py recuperar --edad-minima 0` |
-| Un nodo quedó aislado después de una prueba | `py gestion.py reconectar xx` |
+| Un nodo quedó aislado o apagado después de una prueba | `py gestion.py restablecer` |
+| `recuperar` dice que Cochabamba no responde | La recuperación decide con el registro del Nodo 3: `py gestion.py restablecer cb` y repita |
+| `restablecer` no alcanza un servidor (`ssh: … timed out`) | La máquina está apagada o sin Tailscale: no se arregla desde la consola. Portal → vm-xx → Ejecutar comando → `tailscale up`, o Cloud Shell `az vm start -g rg-sgbdd -n vm-xx` |
 | El panel no refleja un cambio | En el navegador, Ctrl + F5 |
