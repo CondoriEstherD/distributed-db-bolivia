@@ -19,8 +19,16 @@ from .config import MODO, NODOS, RAIZ, ENV, conectar
 RED_WAN = "sgbdd_wan"
 # Corte de la WAN en modo red: el servidor bloquea el tráfico de la BASE hacia y desde las otras
 # sucursales (Tailscale), pero sigue accesible para su terminal local y su operador.
+# Las reglas van en la PRIMERA posición de FORWARD: Tailscale (ts-forward) y Docker (DOCKER-USER)
+# insertan sus propias cadenas y, según el orden en que se reiniciaron, ts-forward puede aceptar el
+# tráfico antes de llegar a DOCKER-USER. Al aislar se borran y se vuelven a poner arriba de todo.
 MARCA = "-m comment --comment sgbdd-aislado -j DROP"
-REGLAS = (f"DOCKER-USER -i tailscale0 {MARCA}", f"DOCKER-USER -o tailscale0 {MARCA}")
+REGLAS = (f"FORWARD -i tailscale0 {MARCA}", f"FORWARD -o tailscale0 {MARCA}")
+_REGLAS_VIEJAS = (f"DOCKER-USER -i tailscale0 {MARCA}", f"DOCKER-USER -o tailscale0 {MARCA}")
+
+
+def _borrar_reglas():
+    return "; ".join(f"while sudo iptables -D {r} 2>/dev/null; do :; done" for r in REGLAS + _REGLAS_VIEJAS)
 
 
 def remoto(nodo) -> bool:
@@ -132,7 +140,9 @@ def aislar(nodo):
     """
     _exigir_alcanzable(nodo)
     if remoto(nodo):
-        en_servidor(nodo, " && ".join(f"(sudo iptables -C {r} 2>/dev/null || sudo iptables -I {r})" for r in REGLAS))
+        r = en_servidor(nodo, _borrar_reglas() + "; " + " && ".join(f"sudo iptables -I {r}" for r in REGLAS))
+        if r.returncode != 0:
+            raise RuntimeError(f"{nodo}: no se pudo aplicar la regla de firewall: {r.stderr.strip()[:150]}")
     elif not aislado(nodo):
         docker("network", "disconnect", RED_WAN, nodo.contenedor)
 
@@ -140,7 +150,7 @@ def aislar(nodo):
 def reconectar(nodo):
     _exigir_alcanzable(nodo)
     if remoto(nodo):
-        en_servidor(nodo, "; ".join(f"while sudo iptables -D {r} 2>/dev/null; do :; done" for r in REGLAS))
+        en_servidor(nodo, _borrar_reglas())
     elif aislado(nodo):
         docker("network", "connect", RED_WAN, nodo.contenedor)
 
