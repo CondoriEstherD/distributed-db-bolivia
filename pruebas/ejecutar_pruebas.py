@@ -274,33 +274,27 @@ def p13():
 
 
 PRUEBAS = {f.__name__.upper(): f for f in (p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13)}
-# Necesitan aislar o apagar un nodo de este equipo con Docker, posible solo en modo lab.
-CON_AISLAMIENTO = {"P1", "P2", "P3", "P4", "P5", "P6", "P8", "P12", "P13"}
+# Las pruebas de fallas aíslan o apagan Beni (y P12, La Paz). En lab con Docker local; en red,
+# en el servidor del nodo por SSH (sgbdd.operacion), así que corren todas desde la consola.
+TOCADOS = (BE, LP)
 
 
 def main():
-    # P13 solo apaga Beni: en modo red basta con que Beni esté en este equipo.
-    manuales = (CON_AISLAMIENTO - ({"P13"} if BE.local else set())) if MODO == "red" else set()
-    elegidas = [a.upper() for a in sys.argv[1:]] or [c for c in PRUEBAS if c not in manuales]
+    elegidas = [a.upper() for a in sys.argv[1:]] or list(PRUEBAS)
     resultados = []
     for clave in elegidas:
         prueba = PRUEBAS[clave]
-        if clave in manuales:
-            print(f"▶ {clave} {prueba.__doc__}: en modo red se demuestra a mano "
-                  "(`tailscale down` en el equipo del nodo)", flush=True)
-            continue
         print(f"▶ {clave} {prueba.__doc__}…", flush=True)
         inicio = time.time()
         try:
             detalle, ok = prueba(), True
         except Exception as e:  # una prueba fallida no detiene las demás
             detalle, ok = f"{e.__class__.__name__}: {e}", False
-        finally:
-            for nodo in op.locales():
+        finally:  # deja los nodos como estaban aunque la prueba falle
+            for nodo in (op.locales() if MODO == "lab" else TOCADOS):
                 if op.apagado(nodo):
                     op.encender(nodo, informar=silencio)
-                if MODO == "lab":
-                    op.reconectar(nodo)
+                op.reconectar(nodo)
         resultados.append((clave, ok))
         print(f"  {'✔ PASA' if ok else '✖ FALLA'} ({time.time() - inicio:.1f} s) — {detalle}", flush=True)
     fallas = [c for c, ok in resultados if not ok]

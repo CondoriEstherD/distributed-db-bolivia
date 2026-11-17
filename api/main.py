@@ -166,8 +166,7 @@ def nodo(cod):
 # servidor), pero la sucursal sigue operando: su caja entra al servidor por la red local. La consola
 # la emula entrando al servidor del nodo (SSH en red; Docker en lab) y usando psql DENTRO del
 # contenedor (socket local), sin pasar por la red de bases de datos.
-MARCA = "-m comment --comment sgbdd-aislado -j DROP"
-REGLAS = (f"DOCKER-USER -i tailscale0 {MARCA}", f"DOCKER-USER -o tailscale0 {MARCA}")
+REGLAS = op.REGLAS
 
 
 def _ejecutar(args, entrada=None, timeout=25):
@@ -197,38 +196,12 @@ def psql_local(n, sql_texto, params=None, usuario="fdw_lector"):
     return json.loads(r.stdout.strip() or "[]")
 
 
-def _diagnostico(f):
-    """Nodo que no responde por la WAN (modo red): ¿aislado, apagado o servidor inalcanzable?"""
-    n = NODOS[f["cod"]]
-    cmd = (f"docker inspect -f '{{{{.State.Running}}}}' {n.contenedor}; "
-           f"sudo iptables -C {REGLAS[0]} 2>/dev/null && echo AISLADO; "
-           f"docker exec {n.contenedor} psql -X -At -U postgres -d {n.bd} -c 'SELECT count(*) FROM ventas' 2>/dev/null")
-    try:
-        r = en_servidor(n, cmd, timeout=12)
-    except HTTPException:
-        return f
-    lineas = r.stdout.split()
-    if r.returncode == 255 or not lineas:  # SSH falló: VM apagada o sin Tailscale
-        return f
-    if lineas[0] == "false":
-        return {**f, "estado": "APAGADO", "replicacion": "servidor de base de datos detenido"}
-    if "AISLADO" in lineas:
-        ventas = int(lineas[-1]) if lineas[-1].isdigit() else None
-        return {**f, "estado": "AISLADO", "ventas": ventas,
-                "replicacion": "enlace WAN cortado: opera solo localmente"}
-    return f
-
-
 _estado = {"t": 0.0, "v": [], "actualizando": False}
 _estado_lock = threading.Lock()
 
 
 def _calcular_estado():
-    filas_estado = op.estado_nodos()
-    if MODO == "red":
-        with ThreadPoolExecutor(max_workers=len(NODOS)) as ex:
-            filas_estado = list(ex.map(lambda f: f if f["en_linea"] else _diagnostico(f), filas_estado))
-    return filas_estado
+    return op.estado_nodos()  # en red distingue AISLADO / APAGADO preguntando al servidor del nodo
 
 
 def _refrescar_estado():
@@ -730,17 +703,12 @@ def api_falla(cod: str, accion: str):
     n = nodo(cod)
     if accion not in COMANDOS_FALLA:
         raise HTTPException(404, "Acción desconocida")
-    if MODO == "red":
-        r = en_servidor(n, COMANDOS_FALLA[accion].format(contenedor=n.contenedor))
-        if r.returncode not in (0, 1):
-            raise HTTPException(503, f"{n}: {error(r.stderr or r.stdout)}")
-    else:
-        acciones = {"aislar": op.aislar, "reconectar": op.reconectar, "apagar": op.apagar,
-                    "encender": lambda x: op.encender(x, informar=lambda *_: None)}
-        try:
-            acciones[accion](n)
-        except RuntimeError as e:
-            raise HTTPException(409, error(e)) from e
+    acciones = {"aislar": op.aislar, "reconectar": op.reconectar, "apagar": op.apagar,
+                "encender": lambda x: op.encender(x, informar=lambda *_: None)}
+    try:
+        acciones[accion](n)  # lab: Docker en este equipo · red: en el servidor del nodo por SSH
+    except RuntimeError as e:
+        raise HTTPException(409, error(e)) from e
     with _conexiones_lock:  # las conexiones guardadas a ese nodo quedaron rotas
         for clave in [k for k in _conexiones if k[0] == cod]:
             par = _conexiones.pop(clave)

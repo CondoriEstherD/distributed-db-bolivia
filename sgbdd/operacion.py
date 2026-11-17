@@ -1,8 +1,13 @@
 """Operación de los nodos: despliegue, configuración entre nodos, estado y simulación de fallas.
 
-Compartido por gestion.py (consola), el panel Streamlit y las pruebas.
+Compartido por gestion.py (consola), el panel y las pruebas.
+
+Modo lab: los 6 contenedores están en este equipo y se manejan con Docker directamente.
+Modo red: cada nodo está en su propio servidor; los comandos sobre un nodo que no es de este
+equipo se ejecutan EN su servidor por SSH (sobre Tailscale), como lo haría su operador.
 """
 import re
+import shlex
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -12,11 +17,36 @@ import psycopg
 from .config import MODO, NODOS, RAIZ, ENV, conectar
 
 RED_WAN = "sgbdd_wan"
+# Corte de la WAN en modo red: el servidor bloquea el tráfico de la BASE hacia y desde las otras
+# sucursales (Tailscale), pero sigue accesible para su terminal local y su operador.
+MARCA = "-m comment --comment sgbdd-aislado -j DROP"
+REGLAS = (f"DOCKER-USER -i tailscale0 {MARCA}", f"DOCKER-USER -o tailscale0 {MARCA}")
 
 
-def docker(*args, check=True):
-    r = subprocess.run(["docker", *args], cwd=RAIZ, text=True, encoding="utf-8",
-                       capture_output=True)
+def remoto(nodo) -> bool:
+    return MODO == "red" and not nodo.local
+
+
+def en_servidor(nodo, comando, entrada=None, timeout=60):
+    """Comando de shell en el servidor (VM) del nodo, por SSH sobre Tailscale."""
+    try:
+        r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", f"azureuser@vm-{nodo.cod}",
+                            comando], input=entrada, text=True, encoding="utf-8", capture_output=True, timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError(f"{nodo}: su servidor no respondió por SSH (¿Tailscale pide verificación? "
+                           "ponga la regla SSH de la ACL en «accept»)") from e
+    if r.returncode == 255:
+        raise RuntimeError(f"{nodo}: no se alcanza su servidor (vm-{nodo.cod}): {r.stderr.strip()[:150]}")
+    return r
+
+
+def docker(*args, check=True, nodo=None, entrada=None):
+    """Docker en este equipo o, si `nodo` está en otro servidor (modo red), en el servidor del nodo."""
+    if nodo is not None and remoto(nodo):
+        r = en_servidor(nodo, "docker " + shlex.join(args), entrada)
+    else:
+        r = subprocess.run(["docker", *args], cwd=RAIZ, input=entrada, text=True, encoding="utf-8",
+                           capture_output=True)
     if check and r.returncode != 0:
         raise RuntimeError(f"docker {' '.join(args[:3])}…: {r.stderr.strip() or r.stdout.strip()}")
     return r
@@ -34,7 +64,7 @@ def consola(nodo, comando, usuario="postgres"):
     funciona aunque el nodo esté aislado de la WAN. Devuelve filas como listas.
     """
     r = docker("exec", nodo.contenedor, "psql", "-X", "-v", "ON_ERROR_STOP=1", "-A", "-t",
-               "-F", "|", "-U", usuario, "-d", nodo.bd, "-c", comando, check=False)
+               "-F", "|", "-U", usuario, "-d", nodo.bd, "-c", comando, check=False, nodo=nodo)
     if r.returncode != 0:
         if "is not running" in r.stderr:
             raise RuntimeError(f"{nodo} está apagado: el servidor no atiende ni siquiera localmente")
@@ -59,50 +89,59 @@ def vender_local(nodo, departamento=None):
 
 
 # ------------------------------------------------------------------ fallas de red
-def _exigir_lab(nodo):
-    if MODO != "lab" or not nodo.local:
-        raise RuntimeError(f"En modo red, corte el enlace de {nodo} en su equipo: `tailscale down` "
-                           "(y `tailscale up` para reconectar)")
-
-
 def _exigir_local(nodo):
     if not nodo.local:
         raise RuntimeError(f"{nodo} no está en este equipo: ejecute el comando en el equipo que lo aloja")
 
 
+def _exigir_alcanzable(nodo):
+    if not nodo.local and MODO != "red":
+        raise RuntimeError(f"{nodo} no está en este equipo: ejecute el comando en el equipo que lo aloja")
+
+
 def apagado(nodo) -> bool:
-    r = docker("inspect", "-f", "{{.State.Running}}", nodo.contenedor, check=False)
+    r = docker("inspect", "-f", "{{.State.Running}}", nodo.contenedor, check=False, nodo=nodo)
     return r.returncode == 0 and r.stdout.strip() == "false"
 
 
 def apagar(nodo):
-    """Caída total: detiene el servidor del nodo (deja de operar incluso localmente)."""
-    _exigir_local(nodo)
-    docker("stop", nodo.contenedor)
+    """Caída total: detiene el servidor de base de datos del nodo (deja de operar incluso localmente)."""
+    _exigir_alcanzable(nodo)
+    docker("stop", nodo.contenedor, nodo=nodo)
 
 
 def encender(nodo, informar=print):
     """Reinicia el servidor; la réplica del catálogo se pone al día sola al volver."""
-    _exigir_local(nodo)
-    docker("start", nodo.contenedor)
+    _exigir_alcanzable(nodo)
+    docker("start", nodo.contenedor, nodo=nodo)
     esperar_sanos([nodo], informar)
 
 
 def aislado(nodo) -> bool:
+    if remoto(nodo):
+        return en_servidor(nodo, f"sudo iptables -C {REGLAS[0]} 2>/dev/null").returncode == 0
     r = docker("inspect", "-f", "{{json .NetworkSettings.Networks}}", nodo.contenedor, check=False)
     return r.returncode == 0 and RED_WAN not in r.stdout
 
 
 def aislar(nodo):
-    """Corta el enlace WAN del nodo. El nodo SIGUE funcionando localmente (autonomía)."""
-    _exigir_lab(nodo)
-    if not aislado(nodo):
+    """Corta el enlace WAN del nodo. El nodo SIGUE funcionando localmente (autonomía).
+
+    Lab: desconecta el contenedor de la red Docker «sgbdd_wan». Red: regla de firewall en su
+    servidor que bloquea la base hacia y desde las otras sucursales (su servidor sigue accesible).
+    """
+    _exigir_alcanzable(nodo)
+    if remoto(nodo):
+        en_servidor(nodo, " && ".join(f"(sudo iptables -C {r} 2>/dev/null || sudo iptables -I {r})" for r in REGLAS))
+    elif not aislado(nodo):
         docker("network", "disconnect", RED_WAN, nodo.contenedor)
 
 
 def reconectar(nodo):
-    _exigir_lab(nodo)
-    if aislado(nodo):
+    _exigir_alcanzable(nodo)
+    if remoto(nodo):
+        en_servidor(nodo, "; ".join(f"while sudo iptables -D {r} 2>/dev/null; do :; done" for r in REGLAS))
+    elif aislado(nodo):
         docker("network", "connect", RED_WAN, nodo.contenedor)
 
 
@@ -112,23 +151,23 @@ def latencia(nodo, ms):
     Requiere `cap_add: [NET_ADMIN]` en el servicio (solo Beni lo tiene). Al aislar y reconectar
     el nodo, Docker crea una interfaz nueva y la latencia desaparece.
     """
-    _exigir_local(nodo)
+    _exigir_alcanzable(nodo)
     c = nodo.contenedor
-    if "NET_ADMIN" not in docker("inspect", "-f", "{{.HostConfig.CapAdd}}", c).stdout:
+    if "NET_ADMIN" not in docker("inspect", "-f", "{{.HostConfig.CapAdd}}", c, nodo=nodo).stdout:
         raise RuntimeError(f"{nodo} no tiene cap_add: [NET_ADMIN] en docker-compose.yml (solo Beni)")
-    if docker("exec", c, "sh", "-c", "command -v tc", check=False).returncode != 0:
+    if docker("exec", c, "sh", "-c", "command -v tc", check=False, nodo=nodo).returncode != 0:
         docker("exec", "-u", "root", c, "sh", "-c",
-               "apt-get update -qq && apt-get install -y -qq iproute2 >/dev/null")
+               "apt-get update -qq && apt-get install -y -qq iproute2 >/dev/null", nodo=nodo)
     if ms > 0:
         docker("exec", "-u", "root", c, "tc", "qdisc", "replace", "dev", "eth0", "root", "netem",
-               "delay", f"{ms}ms", f"{ms // 5}ms", "loss", "1%")
+               "delay", f"{ms}ms", f"{ms // 5}ms", "loss", "1%", nodo=nodo)
     else:  # sin latencia previa, `tc qdisc del` falla: se ignora
-        docker("exec", "-u", "root", c, "tc", "qdisc", "del", "dev", "eth0", "root", check=False)
+        docker("exec", "-u", "root", c, "tc", "qdisc", "del", "dev", "eth0", "root", check=False, nodo=nodo)
 
 
 def latencia_actual(nodo) -> int:
     """Retardo configurado en ms (0 si no hay o no se puede leer)."""
-    r = docker("exec", nodo.contenedor, "sh", "-c", "tc qdisc show dev eth0", check=False)
+    r = docker("exec", nodo.contenedor, "sh", "-c", "tc qdisc show dev eth0", check=False, nodo=nodo)
     m = re.search(r"delay (\d+)ms", r.stdout)
     return int(m.group(1)) if m else 0
 
@@ -146,11 +185,13 @@ def levantar(admin=False, informar=print):
 
 
 def esperar_sanos(nodos, informar=print, limite=600):
-    pendientes = {n.contenedor for n in nodos}
+    por_contenedor = {n.contenedor: n for n in nodos}
+    pendientes = set(por_contenedor)
     inicio = time.time()
     while pendientes:
         for c in sorted(pendientes):
-            estado = docker("inspect", "-f", "{{.State.Health.Status}}", c, check=False).stdout.strip()
+            estado = docker("inspect", "-f", "{{.State.Health.Status}}", c, check=False,
+                            nodo=por_contenedor[c]).stdout.strip()
             if estado == "healthy":
                 pendientes.discard(c)
                 informar(f"  ✔ {c} listo")
@@ -286,8 +327,19 @@ def _estado_nodo(nodo):
         fila.update(en_linea=True, estado="EN LÍNEA", ventas=ventas, **{"2pc_pendientes": pendientes}, replicacion=replicacion)
     except psycopg.Error as e:
         fila["replicacion"] = f"sin conexión ({e.__class__.__name__})"
-    if nodo.local and apagado(nodo):
-        fila.update(estado="APAGADO", replicacion="servidor detenido")
-    elif MODO == "lab" and nodo.local and aislado(nodo):
-        fila.update(estado="AISLADO", replicacion="AISLADO de la WAN")
+    if nodo.local:
+        if apagado(nodo):
+            fila.update(estado="APAGADO", replicacion="servidor detenido")
+        elif MODO == "lab" and aislado(nodo):
+            fila.update(estado="AISLADO", replicacion="AISLADO de la WAN")
+    elif MODO == "red" and not fila["en_linea"]:
+        # No responde por la WAN: se pregunta a su servidor si está apagado o solo aislado.
+        try:
+            if apagado(nodo):
+                fila.update(estado="APAGADO", replicacion="servidor de base de datos detenido")
+            elif aislado(nodo):
+                ventas = consola(nodo, "SELECT count(*) FROM ventas")[0][0]
+                fila.update(estado="AISLADO", ventas=int(ventas), replicacion="enlace WAN cortado: opera solo localmente")
+        except RuntimeError:
+            pass  # ni su servidor responde: VM apagada o sin Tailscale → SIN CONEXIÓN
     return fila

@@ -1,5 +1,8 @@
 """Consola de operación del SGBDD BoliviaDistribución.
 
+En modo red (Azure) los comandos sobre un nodo se ejecutan en el servidor de ese nodo por SSH
+sobre Tailscale: aislar/reconectar (firewall de la WAN), apagar/encender, vender, sql, latencia.
+
   python gestion.py levantar [--admin]   levanta los nodos de NODOS_LOCALES (y pgAdmin)
   python gestion.py configurar           suscripciones al catálogo + esquema global en La Paz
   python gestion.py estado               salud, volumen y replicación de los 6 nodos
@@ -38,11 +41,11 @@ def _nodo(cod):
 
 
 def cmd_estado(_):
-    print(f"{'NODO':<24}{'EN LÍNEA':<10}{'VENTAS':>8}  {'2PC PEND.':>9}  REPLICACIÓN")
+    print(f"{'NODO':<24}{'ESTADO':<14}{'VENTAS':>8}  {'2PC PEND.':>9}  REPLICACIÓN")
     for f in op.estado_nodos():
         ventas = "" if f["ventas"] is None else f"{f['ventas']:,}".replace(",", ".")
         pend = "" if f["2pc_pendientes"] is None else f["2pc_pendientes"]
-        print(f"{f['nodo']:<24}{'sí' if f['en_linea'] else 'NO':<10}{ventas:>8}  {pend:>9}  {f['replicacion']}")
+        print(f"{f['nodo']:<24}{f['estado']:<14}{ventas:>8}  {pend:>9}  {f['replicacion']}")
 
 
 def main():
