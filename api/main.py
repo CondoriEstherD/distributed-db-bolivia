@@ -485,33 +485,125 @@ def api_traspaso_sql():
     return {"descontar": DESCONTAR.strip(), "acreditar": ACREDITAR.strip()}
 
 
-class Traspaso(BaseModel):
-    origen: int
-    destino: int
-    items: dict[int, int]
-    pausa: float = 0
+# ------------------------------------------------------------------ solicitudes de traspaso
+# Un traspaso tiene dos niveles de «sí»:
+#   · PERSONAS: el encargado de origen lo solicita y el de destino lo acepta (o rechaza).
+#   · BASES DE DATOS: al aceptar se ejecuta el 2PC; cada base vota en la fase 1 (PREPARE).
+# Las solicitudes viven en el Nodo 3 (Cochabamba), el hub de traspasos.
+SQL_SOLICITUDES = """SELECT id, origen, destino, id_almacen_origen, id_almacen_destino, items, nota, estado,
+       motivo, gid, creado_en, respondido_en
+FROM solicitudes_traspaso
+{filtro}ORDER BY id DESC LIMIT 100"""
 
 
-@app.post("/api/traspasos")
-def api_traspasar(t: Traspaso, request: Request):
-    """Ejecuta el 2PC y transmite cada paso del protocolo (NDJSON) mientras ocurre.
-    La sucursal envía mercadería desde SUS almacenes; antes de empezar se verifica que las dos
-    sucursales estén en la red nacional."""
-    o, d = nodo_de_almacen(t.origen), nodo_de_almacen(t.destino)
-    exigir(request, o.cod)
+def red_para_traspaso(o, d):
     caidos = [f"{n} ({estado_de(n.cod).lower()})" for n in (o, d) if not en_linea(n.cod)]
     if caidos:
         raise HTTPException(409, f"{' y '.join(caidos)}: el 2PC necesita el voto de ambas sucursales por la "
-                                 "red. Las ventas locales de una sucursal aislada siguen permitidas.")
+                                 "red nacional. Las ventas locales de una sucursal aislada siguen permitidas.")
+
+
+class Solicitud(BaseModel):
+    origen: int
+    destino: int
+    items: dict[int, int]
+    nota: str = ""
+
+
+@app.post("/api/solicitudes")
+def api_solicitar(s: Solicitud, request: Request):
+    """El encargado de ORIGEN solicita el traspaso (su «sí»). Queda PENDIENTE hasta que el destino responda."""
+    o, d = nodo_de_almacen(s.origen), nodo_de_almacen(s.destino)
+    exigir(request, o.cod)
+    if o == d:
+        raise HTTPException(400, "El traspaso debe ser a otra sucursal")
+    items = {str(p): q for p, q in s.items.items() if q > 0}
+    if not items:
+        raise HTTPException(400, "Agregue al menos un producto")
+    r = filas(NODOS["cb"], """INSERT INTO solicitudes_traspaso (origen, destino, id_almacen_origen, id_almacen_destino,
+                                  items, nota) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+              (o.cod, d.cod, s.origen, s.destino, json.dumps(items), s.nota[:300] or None), "coordinador_2pc")
+    return {"id": r[0]["id"]}
+
+
+@app.get("/api/solicitudes")
+def api_solicitudes(request: Request):
+    s = sucursal_de(request)
+    filtro = "" if s == CENTRAL else f"WHERE origen = '{s}' OR destino = '{s}'\n"
+    sql = SQL_SOLICITUDES.format(filtro=filtro)
+    return {"sql": sql, "filas": filas(NODOS["cb"], sql)}
+
+
+def _solicitud(sid):
+    r = filas(NODOS["cb"], "SELECT * FROM solicitudes_traspaso WHERE id = %s", (sid,))
+    if not r:
+        raise HTTPException(404, "Solicitud inexistente")
+    return r[0]
+
+
+def _responder(sid, estado, motivo=None, gid=None, desde="PENDIENTE"):
+    """Cambia el estado solo si sigue en `desde` (evita que dos personas respondan a la vez)."""
+    r = filas(NODOS["cb"], """UPDATE solicitudes_traspaso SET estado = %s, motivo = %s, gid = %s, respondido_en = now()
+                              WHERE id = %s AND estado = %s RETURNING id""",
+              (estado, motivo, gid, sid, desde), "coordinador_2pc")
+    if not r:
+        raise HTTPException(409, "La solicitud ya fue respondida")
+
+
+class Rechazo(BaseModel):
+    motivo: str = ""
+
+
+@app.post("/api/solicitudes/{sid}/rechazar")
+def api_rechazar(sid: int, r: Rechazo, request: Request):
+    """El encargado de DESTINO no acepta: no se ejecuta nada en las bases."""
+    sol = _solicitud(sid)
+    exigir(request, sol["destino"])
+    _responder(sid, "RECHAZADA", r.motivo[:300] or "Rechazada por la sucursal de destino")
+    return {"ok": True}
+
+
+@app.post("/api/solicitudes/{sid}/cancelar")
+def api_cancelar(sid: int, request: Request):
+    sol = _solicitud(sid)
+    exigir(request, sol["origen"])
+    _responder(sid, "CANCELADA", "Cancelada por la sucursal de origen")
+    return {"ok": True}
+
+
+class Aceptacion(BaseModel):
+    pausa: float = 0
+
+
+@app.post("/api/solicitudes/{sid}/aceptar")
+def api_aceptar(sid: int, a: Aceptacion, request: Request):
+    """El encargado de DESTINO acepta (segundo «sí» humano). Entonces se verifica la red y se ejecuta
+    el 2PC, transmitiendo cada paso del protocolo (NDJSON) mientras ocurre."""
+    sol = _solicitud(sid)
+    exigir(request, sol["destino"])
+    if sol["estado"] != "PENDIENTE":
+        raise HTTPException(409, f"La solicitud ya está {sol['estado'].lower()}")
+    o, d = NODOS[sol["origen"]], NODOS[sol["destino"]]
+    red_para_traspaso(o, d)  # si falta la red, la solicitud sigue PENDIENTE y puede aceptarse después
+    _responder(sid, "ACEPTADA")
+    items = {int(p): q for p, q in sol["items"].items()}
     cola = queue.Queue()
 
     def trabajar():
         try:
-            tid = traspasar(t.origen, t.destino, t.items, min(t.pausa, 30),
+            cola.put({"tipo": "paso", "texto": f"Solicitud #{sid} aceptada por {d}: se inicia el 2PC"})
+            tid = traspasar(sol["id_almacen_origen"], sol["id_almacen_destino"], items, min(a.pausa, 30),
                             informar=lambda m: cola.put({"tipo": "paso", "texto": m}))
+            _responder(sid, "COMPLETADA", gid=tid, desde="ACEPTADA")
             cola.put({"tipo": "fin", "ok": True, "gid": tid})
         except (TraspasoError, ValueError) as e:
+            try:
+                _responder(sid, "FALLIDA", motivo=error(e), desde="ACEPTADA")
+            except HTTPException:
+                pass
             cola.put({"tipo": "fin", "ok": False, "error": error(e)})
+        except HTTPException as e:
+            cola.put({"tipo": "fin", "ok": False, "error": e.detail})
         finally:
             _estado["t"] = 0
 
