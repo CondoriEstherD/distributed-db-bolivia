@@ -91,6 +91,12 @@ PASS_AUDITOR=$(clave)
 PASS_ADMIN_CATALOGO=$(clave)
 PASS_REPLICADOR=$(clave)
 PANEL_CLAVE=$(clave)
+CLAVE_LP=lapaz-$((RANDOM % 9000 + 1000))
+CLAVE_SC=santacruz-$((RANDOM % 9000 + 1000))
+CLAVE_CB=cochabamba-$((RANDOM % 9000 + 1000))
+CLAVE_TJ=tarija-$((RANDOM % 9000 + 1000))
+CLAVE_OR=oruro-$((RANDOM % 9000 + 1000))
+CLAVE_BE=beni-$((RANDOM % 9000 + 1000))
 EOF
 fi
 sed -i '/^MODO=\|^BIND_IP=\|^NODOS_LOCALES=\|^HOST_\|^PORT_/d' "$ENV_LOCAL"

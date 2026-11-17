@@ -32,37 +32,89 @@ from sgbdd.recuperacion_2pc import recuperar
 
 app = FastAPI(title="SGBDD BoliviaDistribución", docs_url="/api/docs", openapi_url="/api/openapi.json")
 
-# ------------------------------------------------------------------ acceso
+# ------------------------------------------------------------------ acceso por sucursal
+# Cada sucursal entra con su propia contraseña (CLAVE_LP … CLAVE_BE en .env) y solo ve y opera
+# sus propios datos. La Paz es además la administración central (vista nacional, crédito FC2,
+# precios, consultas, auditoría 2PC y fallas). Sin CLAVE_xx se usa PANEL_CLAVE; sin ninguna, no
+# se pide contraseña (uso local de laboratorio).
 CLAVE = ENV.get("PANEL_CLAVE", "")
-TOKEN = hmac.new(CLAVE.encode(), b"sgbdd-panel", hashlib.sha256).hexdigest()
-LIBRES = {"/api/sesion", "/api/login"}
+CLAVES = {cod: ENV.get(f"CLAVE_{cod.upper()}", CLAVE) for cod in NODOS}
+SECRETO = (CLAVE or "sgbdd-lab").encode()
+CENTRAL = "lp"
+LIBRES = {"/api/sesion", "/api/login", "/api/logout", "/api/sucursales"}
+SOLO_CENTRAL = ("/api/consultas", "/api/recuperacion", "/api/fallas", "/api/verificar", "/api/central")
+
+
+def _firma(cod):
+    return hmac.new(SECRETO, f"sucursal:{cod}".encode(), hashlib.sha256).hexdigest()
+
+
+def sucursal_de(request: Request):
+    """Código de la sucursal de la sesión (o None)."""
+    cod, _, firma = request.cookies.get("sgbdd", "").partition(".")
+    return cod if cod in NODOS and hmac.compare_digest(firma, _firma(cod)) else None
+
+
+def exigir(request: Request, cod):
+    """La sesión debe ser de esa sucursal, o de la administración central."""
+    s = sucursal_de(request)
+    if s != cod and s != CENTRAL:
+        raise HTTPException(403, f"Su sesión es de {NODOS[s].nombre if s else 'ninguna sucursal'}: "
+                                 f"no puede operar en {NODOS[cod].nombre}")
 
 
 @app.middleware("http")
 async def acceso(request: Request, call_next):
     ruta = request.url.path
-    if CLAVE and ruta.startswith("/api/") and ruta not in LIBRES:
-        if not hmac.compare_digest(request.cookies.get("sgbdd", ""), TOKEN):
-            return JSONResponse({"detail": "Se requiere la contraseña del panel"}, status_code=401)
+    if ruta.startswith("/api/") and ruta not in LIBRES:
+        s = sucursal_de(request)
+        if s is None:
+            return JSONResponse({"detail": "Inicie sesión con la contraseña de su sucursal"}, status_code=401)
+        m = re.match(r"/api/nodos/(\w+)/", ruta)
+        if m and m.group(1) != s and s != CENTRAL:
+            return JSONResponse({"detail": f"Solo puede ver los datos de su sucursal ({NODOS[s].nombre})"},
+                                status_code=403)
+        es_cambio_precio = ruta.startswith("/api/catalogo/") and request.method == "POST"
+        if (ruta.startswith(SOLO_CENTRAL) or es_cambio_precio) and s != CENTRAL:
+            return JSONResponse({"detail": "Solo la administración central (La Paz)"}, status_code=403)
     return await call_next(request)
 
 
 class Login(BaseModel):
-    clave: str
+    sucursal: str
+    clave: str = ""
+
+
+@app.get("/api/sucursales")
+def api_sucursales():
+    """Lista para la pantalla de ingreso (sin datos sensibles)."""
+    return [{"cod": n.cod, "num": n.num, "nombre": n.nombre, "deptos": list(n.deptos),
+             "requiere_clave": bool(CLAVES[n.cod]), "central": n.cod == CENTRAL} for n in NODOS.values()]
 
 
 @app.get("/api/sesion")
 def sesion(request: Request):
-    return {"requiere_clave": bool(CLAVE), "modo": MODO,
-            "autorizado": not CLAVE or hmac.compare_digest(request.cookies.get("sgbdd", ""), TOKEN)}
+    s = sucursal_de(request)
+    return {"modo": MODO, "autorizado": s is not None, "sucursal": s, "central": s == CENTRAL}
 
 
 @app.post("/api/login")
 def login(datos: Login):
-    if not CLAVE or not hmac.compare_digest(datos.clave.encode(), CLAVE.encode()):
+    if datos.sucursal not in NODOS:
+        raise HTTPException(404, "Sucursal desconocida")
+    esperada = CLAVES[datos.sucursal]
+    if esperada and not hmac.compare_digest(datos.clave.encode(), esperada.encode()):
         raise HTTPException(401, "Contraseña incorrecta")
     r = JSONResponse({"ok": True})
-    r.set_cookie("sgbdd", TOKEN, httponly=True, samesite="strict", max_age=12 * 3600)
+    r.set_cookie("sgbdd", f"{datos.sucursal}.{_firma(datos.sucursal)}", httponly=True, samesite="strict",
+                 max_age=12 * 3600)
+    return r
+
+
+@app.post("/api/logout")
+def logout():
+    r = JSONResponse({"ok": True})
+    r.delete_cookie("sgbdd")
     return r
 
 
@@ -441,9 +493,12 @@ class Traspaso(BaseModel):
 
 
 @app.post("/api/traspasos")
-def api_traspasar(t: Traspaso):
-    """Ejecuta el 2PC y transmite cada paso del protocolo (NDJSON) mientras ocurre."""
+def api_traspasar(t: Traspaso, request: Request):
+    """Ejecuta el 2PC y transmite cada paso del protocolo (NDJSON) mientras ocurre.
+    La sucursal envía mercadería desde SUS almacenes; antes de empezar se verifica que las dos
+    sucursales estén en la red nacional."""
     o, d = nodo_de_almacen(t.origen), nodo_de_almacen(t.destino)
+    exigir(request, o.cod)
     caidos = [f"{n} ({estado_de(n.cod).lower()})" for n in (o, d) if not en_linea(n.cod)]
     if caidos:
         raise HTTPException(409, f"{' y '.join(caidos)}: el 2PC necesita el voto de ambas sucursales por la "
@@ -473,12 +528,44 @@ def api_traspasar(t: Traspaso):
 
 
 @app.get("/api/traspasos/log")
-def api_log():
-    sql = """SELECT gid, origen, destino, id_almacen_origen, id_almacen_destino,
+def api_log(request: Request):
+    """Registro del coordinador (Nodo 3). Una sucursal ve solo los envíos en los que participa."""
+    s = sucursal_de(request)
+    filtro = "" if s == CENTRAL else f"WHERE origen = '{s}' OR destino = '{s}'\n"
+    sql = f"""SELECT gid, origen, destino, id_almacen_origen, id_almacen_destino,
        COALESCE(items, jsonb_build_object(id_producto::text, cantidad)) AS items,
        estado, detalle, creado_en
-FROM traspasos_log ORDER BY creado_en DESC LIMIT 15"""
+FROM traspasos_log
+{filtro}ORDER BY creado_en DESC LIMIT 30"""
     return {"sql": sql, "filas": filas(NODOS["cb"], sql)}
+
+
+# ------------------------------------------------------------------ clientes
+SQL_CLIENTES_SUC = """SELECT c.id_cliente, c.nit_ci, c.razon_social, c.telefono, c.direccion, c.departamento_id,
+       count(v.id_venta) AS compras, coalesce(sum(v.total_bs), 0) AS total_bs, max(v.fecha_hora) AS ultima_compra
+FROM clientes_datos_generales c
+LEFT JOIN ventas v USING (id_cliente)
+GROUP BY c.id_cliente
+ORDER BY compras DESC, c.id_cliente"""
+
+
+@app.get("/api/nodos/{cod}/clientes-lista")
+def api_clientes_sucursal(cod: str):
+    """Clientes de la sucursal: SOLO el fragmento FC1 (datos generales). El crédito (FC2) no está aquí."""
+    return {"sql": SQL_CLIENTES_SUC, "filas": leer_sucursal(nodo(cod), SQL_CLIENTES_SUC)}
+
+
+SQL_CREDITO = """SELECT id_cliente, nit_ci, razon_social, departamento_id, limite_credito, saldo_pendiente,
+       calificacion_riesgo, estado_credito
+FROM nacional.clientes_completo   -- FC1 (6 nodos, vía postgres_fdw) ⋈ FC2 (solo La Paz)
+WHERE estado_credito <> 'SOLO CONTADO'
+ORDER BY saldo_pendiente DESC"""
+
+
+@app.get("/api/central/clientes")
+def api_central_clientes():
+    """Ficha crediticia completa: reconstrucción de la fragmentación vertical CLIENTES = FC1 ⋈ FC2."""
+    return {"sql": SQL_CREDITO, "filas": filas(NODOS["lp"], SQL_CREDITO, usuario="rol_auditor", timeout_ms=30000)}
 
 
 # ------------------------------------------------------------------ catálogo replicado

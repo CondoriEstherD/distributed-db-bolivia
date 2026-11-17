@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import { Activity, ArrowRight, Boxes, Database, Receipt, Server, Workflow } from 'lucide-react'
+import { Activity, Boxes, Database, Receipt, Server, Workflow } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts'
-import { Link } from 'react-router'
 
 import { BloqueSql, Cargando, Encabezado, Error, EstadoBadge, Indicador, Seccion } from '@/components/comunes'
 import { Badge } from '@/components/ui/badge'
@@ -83,9 +82,6 @@ export default function Panorama() {
                   </div>
                   <div className="flex items-center justify-between border-t pt-3 text-xs">
                     <span className="flex items-center gap-1.5 text-muted-foreground"><Database className="size-3.5" />{n.replicacion}</span>
-                    <Link to={`/sucursal/${n.cod}`} className="flex items-center gap-1 font-medium text-primary hover:underline">
-                      Abrir <ArrowRight className="size-3.5" />
-                    </Link>
                   </div>
                 </CardContent>
               </Card>
